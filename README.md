@@ -224,6 +224,238 @@ npm run build
 
 ---
 
+## 🛠️ CLI 命令
+
+Krebs 提供了完整的命令行界面（CLI），用于管理 Skills 和查看系统状态。
+
+### 基本用法
+
+\`\`\`bash
+krebs <命令> [选项]
+\`\`\`
+
+### 可用命令
+
+#### 帮助命令
+
+\`\`\`bash
+krebs help           # 显示帮助信息
+krebs --help         # 同上
+krebs -h             # 同上
+
+krebs version        # 显示版本信息
+krebs --version      # 同上
+krebs -v             # 同上
+\`\`\`
+
+#### Skills 命令
+
+\`\`\`bash
+# 列出所有技能
+krebs skills list
+
+# 仅列出有安装规范的技能
+krebs skills list --install
+
+# 查看技能安装状态
+krebs skills status <技能名>
+
+# 安装单个技能的依赖
+krebs skills install <技能名>
+
+# 安装所有技能的依赖
+krebs skills install --all
+
+# 仅检查安装状态，不实际安装
+krebs skills install <技能名> --check
+
+# 预览将要安装的内容
+krebs skills install <技能名> --dry-run
+
+# 强制重新安装
+krebs skills install <技能名> --force
+\`\`\`
+
+### 命令示例
+
+\`\`\`bash
+# 查看 test-install 技能的状态
+krebs skills status test-install
+
+# 安装 test-install 技能的依赖
+krebs skills install test-install
+
+# 预览将要安装的内容
+krebs skills install test-install --dry-run
+
+# 安装所有技能的依赖
+krebs skills install --all
+
+# 查看所有有安装规范的技能
+krebs skills list --install
+\`\`\`
+
+### 命令选项说明
+
+| 选项 | 说明 | 适用命令 |
+|------|------|----------|
+| `--all` | 安装所有技能的依赖 | install |
+| `--check` | 仅检查安装状态，不实际安装 | install |
+| `--dry-run` | 预览将要执行的操作 | install |
+| `--force` | 强制重新安装 | install |
+| `--install` | 仅列出有安装规范的技能 | list |
+
+---
+
+## 📦 Skills 依赖安装
+
+Krebs 支持自动安装 Skill 依赖的功能。当 Skill 的 frontmatter 中定义了 `install` 字段时，系统可以自动安装所需的依赖。
+
+### 支持的安装类型
+
+#### 1. Node.js 包
+
+\`\`\`yaml
+---
+install:
+  - kind: node
+    npmPackage: prettyping
+    label: "Prettyping - 美化ping输出"
+    bins:
+      - prettyping
+---
+\`\`\`
+
+支持的包管理器（自动检测）：npm、pnpm、yarn、bun
+
+#### 2. Homebrew Formula
+
+\`\`\`yaml
+---
+install:
+  - kind: brew
+    formula: ffmpeg
+    label: "FFmpeg 多媒体处理工具"
+---
+\`\`\`
+
+#### 3. Go 模块
+
+\`\`\`yaml
+---
+install:
+  - kind: go
+    goModule: github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+    label: "Go 代码检查工具"
+    bins:
+      - golangci-lint
+---
+\`\`\`
+
+#### 4. UV/Python 包
+
+\`\`\`yaml
+---
+install:
+  - kind: uv
+    uvPackage: black
+    label: "Python 代码格式化工具"
+    bins:
+      - black
+---
+\`\`\`
+
+#### 5. 下载文件
+
+\`\`\`yaml
+---
+install:
+  - kind: download
+    url: https://example.com/tool.tar.gz
+    extract: true
+    targetDir: ./bin
+    stripComponents: 1
+    label: "下载并解压工具"
+    bins:
+      - tool
+---
+\`\`\`
+
+### Install Spec 字段说明
+
+\`\`\`typescript
+interface SkillInstallSpec {
+  // 安装类型
+  kind: "node" | "brew" | "go" | "uv" | "download";
+
+  // 可选标识符
+  id?: string;              // 唯一标识
+  label?: string;           // 人类可读描述
+
+  // 可执行文件列表（用于检查安装状态）
+  bins?: string[];          // 可执行文件名列表
+
+  // 平台限制
+  os?: string[];            // 限制操作系统：["darwin", "linux"]
+
+  // 下载相关
+  targetDir?: string;       // 目标目录
+  extract?: boolean;        // 是否解压
+  archive?: string;         // 归档类型：tar.gz, zip
+  stripComponents?: number; // 解压时去掉的目录层级
+
+  // Kind 特定字段
+  formula?: string;         // brew: formula 名称
+  npmPackage?: string;      // node: npm 包名
+  goModule?: string;        // go: 模块路径
+  uvPackage?: string;       // uv: 包名
+  url?: string;             // download: 下载 URL
+}
+\`\`\`
+
+### 安装机制
+
+1. **安装检查**：系统首先检查依赖是否已安装
+2. **缓存机制**：已安装的依赖会被缓存，避免重复安装
+3. **超时控制**：每个安装操作有默认超时时间
+4. **Dry-run 模式**：可以预览将要安装的内容而不实际执行
+
+### 示例 Skill
+
+\`\`\`markdown
+---
+name: VideoProcessor
+description: "视频处理技能"
+install:
+  - kind: brew
+    formula: ffmpeg
+    label: "FFmpeg 多媒体处理工具"
+
+  - kind: node
+    npmPackage: @ffprobe-installer/ffprobe
+    label: "FFprobe 探测工具"
+
+  - kind: download
+    url: https://example.com/video-tools.tar.gz
+    extract: true
+    targetDir: ./bin
+    bins:
+      - video-tool
+---
+
+# VideoProcessor Skill
+
+这个技能用于视频处理和转码...
+
+## 使用方法
+
+\`\`\`typescript
+await agent.process("处理这个视频文件");
+\`\`\`
+\`\`\`
+
+---
+
 ## 💡 API 使用示例
 
 ### 发送聊天消息
@@ -291,7 +523,7 @@ console.log("Complete!");
 
 ## 📁 项目结构
 
-\`\`\`
+```
 krebs/
 ├── src/
 │ ├── agent/ # Agent 层
@@ -322,6 +554,10 @@ krebs/
 │ ├── storage/ # 存储层
 │ │ ├── interface.ts # 存储接口 🆕
 │ │ └── markdown/ # Markdown 实现
+│ ├── cli/ # CLI 命令 🆕
+│ │ ├── index.ts # CLI 入口
+│ │ └── commands/ # 子命令
+│ │   └── skills.ts # Skills 命令
 │ ├── shared/ # 共享模块
 │ │ ├── config.ts # 配置管理
 │ │ └── logger.ts # 日志系统
@@ -339,7 +575,7 @@ krebs/
 ├── tsconfig.json
 ├── production.md # 项目全局文档 🆕
 └── README.md
-\`\`\`
+```
 
 ---
 
@@ -360,6 +596,8 @@ krebs/
 - ✅ **Markdown 存储** - 会话和文档管理（带 Frontmatter）
 - ✅ **工具系统** - 可扩展的工具框架
 - ✅ **技能系统** - 触发式技能系统
+- ✅ **依赖自动安装** 🆕 - Skills 依赖自动安装（npm、brew、go、uv、download）
+- ✅ **CLI 命令** 🆕 - 完整的命令行界面
 - ✅ **Lane 并发控制** - 命令队列和限流
 - ✅ **HTTP + WebSocket** - 双协议支持
 - ✅ **流式响应** - 实时流式输出
@@ -473,6 +711,15 @@ npm run format # Prettier 格式化
 - 🔄 移除全局单例，改用依赖注入
 - 🔌 Storage 接口化，支持多种实现
 - 🌐 Gateway 通过服务接口解耦
+- 📦 Skills 依赖自动安装功能 🆕
+  - 支持 npm、brew、go、uv、download 五种安装类型
+  - 自动检测已安装依赖
+  - Dry-run 模式预览安装
+- 🖥️ 完整的 CLI 命令支持 🆕
+  - `krebs skills install` - 安装技能依赖
+  - `krebs skills list` - 列出技能
+  - `krebs skills status` - 查看安装状态
+  - 支持 `--all`, `--check`, `--dry-run`, `--force` 选项
 - ✅ 架构评分从 7.2/10 提升至 8.75/10
 
 **详细记录**：

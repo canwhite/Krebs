@@ -20,8 +20,65 @@ export interface ParsedFrontmatter {
   /** 元数据（JSON 字符串） */
   metadata?: string;
 
+  /** 安装规范 */
+  install?: SkillInstallSpec[];
+
   /** 其他自定义字段 */
   [key: string]: unknown;
+}
+
+/**
+ * 技能安装规范
+ */
+export interface SkillInstallSpec {
+  /** 安装类型 */
+  kind: "brew" | "node" | "go" | "uv" | "download";
+
+  /** 安装ID（可选） */
+  id?: string;
+
+  /** 标签/描述 */
+  label?: string;
+
+  /** 需要的二进制文件（用于检查是否已安装） */
+  bins?: string[];
+
+  /** 操作系统限制 */
+  os?: string[];
+
+  // ============ 通用参数 ============
+
+  /** 目标目录（仅 download） */
+  targetDir?: string;
+
+  /** 是否解压（仅 download） */
+  extract?: boolean;
+
+  /** 归档类型（仅 download） */
+  archive?: string;
+
+  /** 解压时剥离的目录层级（仅 download） */
+  stripComponents?: number;
+
+  // ============ 特定类型的参数 ============
+
+  /** Homebrew formula 名称（kind=brew） */
+  formula?: string;
+
+  /** npm 包名（kind=node） */
+  npmPackage?: string;
+
+  /** Go 模块路径（kind=go） */
+  goModule?: string;
+
+  /** UV 包名（kind=uv） */
+  uvPackage?: string;
+
+  /** Python 包名（kind=uv） - 别名 */
+  pythonPackage?: string;
+
+  /** 下载 URL（kind=download） */
+  url?: string;
 }
 
 /**
@@ -47,18 +104,6 @@ export interface KrebsSkillMetadata {
     env?: string[];
     config?: string[];
   };
-
-  /** 安装规范（保留用于未来迭代） */
-  install?: Array<{
-    kind: "brew" | "node" | "go" | "uv" | "download";
-    label?: string;
-    bins?: string[];
-    os?: string[];
-    formula?: string;
-    package?: string;
-    module?: string;
-    url?: string;
-  }>;
 }
 
 /**
@@ -198,3 +243,69 @@ export interface SkillsStats {
   /** 最后更新时间 */
   lastUpdate: number;
 }
+
+/**
+ * 技能安装结果
+ */
+export interface SkillInstallResult {
+  /** 是否成功 */
+  ok: boolean;
+
+  /** 结果消息 */
+  message: string;
+
+  /** 标准输出 */
+  stdout: string;
+
+  /** 标准错误 */
+  stderr: string;
+
+  /** 退出码 */
+  code: number | null;
+
+  /** 安装ID */
+  installId?: string;
+
+  /** 安装的类型 */
+  kind?: string;
+}
+
+/**
+ * 技能安装请求
+ */
+export interface SkillInstallRequest {
+  /** 技能名称 */
+  skillName: string;
+
+  /** 安装ID */
+  installId: string;
+
+  /** 超时时间（毫秒） */
+  timeoutMs?: number;
+
+  /** 是否为dry-run（仅检查不安装） */
+  dryRun?: boolean;
+}
+
+/**
+ * 技能安装状态
+ */
+export interface SkillInstallStatus {
+  /** 技能名称 */
+  skillName: string;
+
+  /** 安装项列表 */
+  items: Array<{
+    installId: string;
+    kind: string;
+    installed: boolean;
+    message?: string;
+  }>;
+
+  /** 全部已安装 */
+  allInstalled: boolean;
+
+  /** 最后检查时间 */
+  lastCheck: number;
+}
+

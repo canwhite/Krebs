@@ -12,6 +12,7 @@ import { createLogger } from "@/shared/logger.js";
 import { SkillsLoader, createSkillsLoader } from "./loader.js";
 import { SkillsFormatter, createSkillsFormatter } from "./formatter.js";
 import { SkillsHotReload, createSkillsHotReload } from "./hot-reload.js";
+import { getSkillInstaller } from "./installer.js";
 import type {
   BuildPromptOptions,
   SkillEntry,
@@ -19,6 +20,8 @@ import type {
   SkillsConfig,
   SkillsStats,
   SkillSnapshot,
+  SkillInstallResult,
+  SkillInstallStatus,
 } from "./types.js";
 
 const logger = createLogger("SkillsManager");
@@ -291,6 +294,129 @@ export class SkillsManager {
   async cleanup(): Promise<void> {
     await this.disableHotReload();
     logger.info("SkillsManager cleaned up");
+  }
+
+  // ============ 技能依赖安装相关方法 ============
+
+  /**
+   * 安装技能依赖
+   *
+   * @param skillName - 技能名称
+   * @param options - 安装选项
+   * @returns 安装结果列表
+   */
+  async installSkillDeps(
+    skillName: string,
+    options?: { dryRun?: boolean; timeoutMs?: number }
+  ): Promise<SkillInstallResult[]> {
+    const skill = this.getSkillByName(skillName);
+
+    if (!skill) {
+      logger.warn(`Skill not found: ${skillName}`);
+      throw new Error(`Skill not found: ${skillName}`);
+    }
+
+    const installer = getSkillInstaller();
+    logger.info(`Installing dependencies for skill: ${skillName}`);
+
+    return await installer.installSkill(skill, options);
+  }
+
+  /**
+   * 安装所有技能的依赖
+   *
+   * @param options - 安装选项
+   * @returns Map<skillName, results>
+   */
+  async installAllSkillDeps(options?: {
+    dryRun?: boolean;
+    timeoutMs?: number;
+  }): Promise<Map<string, SkillInstallResult[]>> {
+    const skills = this.getAllSkills().filter(
+      (s) => s.frontmatter.install && s.frontmatter.install.length > 0
+    );
+
+    if (skills.length === 0) {
+      logger.info("No skills with install specs found");
+      return new Map();
+    }
+
+    logger.info(`Installing dependencies for ${skills.length} skills`);
+
+    const results = new Map<string, SkillInstallResult[]>();
+    const installer = getSkillInstaller();
+
+    for (const skill of skills) {
+      logger.info(`Checking ${skill.skill.name}...`);
+      const skillResults = await installer.installSkill(skill, options);
+      results.set(skill.skill.name, skillResults);
+    }
+
+    return results;
+  }
+
+  /**
+   * 获取技能安装状态
+   *
+   * @param skillName - 技能名称
+   * @returns 安装状态
+   */
+  async getInstallStatus(skillName: string): Promise<SkillInstallStatus | null> {
+    const skill = this.getSkillByName(skillName);
+
+    if (!skill) {
+      logger.warn(`Skill not found: ${skillName}`);
+      return null;
+    }
+
+    const installer = getSkillInstaller();
+    return await installer.getInstallStatus(skill);
+  }
+
+  /**
+   * 获取所有技能的安装状态
+   *
+   * @returns Map<skillName, status>
+   */
+  async getAllInstallStatus(): Promise<Map<string, SkillInstallStatus>> {
+    const skills = this.getAllSkills();
+    const installer = getSkillInstaller();
+    const statusMap = new Map<string, SkillInstallStatus>();
+
+    for (const skill of skills) {
+      const status = await installer.getInstallStatus(skill);
+      statusMap.set(skill.skill.name, status);
+    }
+
+    return statusMap;
+  }
+
+  /**
+   * 检查技能是否有安装规范
+   *
+   * @param skillName - 技能名称
+   * @returns 是否有安装规范
+   */
+  hasInstallSpecs(skillName: string): boolean {
+    const skill = this.getSkillByName(skillName);
+    if (!skill) return false;
+
+    const specs = skill.frontmatter.install ?? [];
+    return specs.length > 0;
+  }
+
+  /**
+   * 列出所有有安装规范的技能
+   *
+   * @returns 技能名称列表
+   */
+  listSkillsWithInstallSpecs(): string[] {
+    return this.getAllSkills()
+      .filter((s) => {
+        const specs = s.frontmatter.install ?? [];
+        return specs.length > 0;
+      })
+      .map((s) => s.skill.name);
   }
 }
 

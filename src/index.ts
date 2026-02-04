@@ -7,6 +7,7 @@
  * - 通过依赖注入管理所有组件
  * - 使用 ChatService 接口解耦 Gateway
  * - 移除全局单例
+ * - 支持CLI命令
  */
 
 import { loadConfig, logger } from "@/shared/index.js";
@@ -28,6 +29,25 @@ import fs from "node:fs/promises";
  * 主函数
  */
 async function main() {
+  // 解析命令行参数
+  const args = process.argv.slice(2);
+
+  // 如果有命令参数，执行CLI命令
+  if (args.length > 0) {
+    const { executeCliCommand } = await import("./cli/index.js");
+    const success = await executeCliCommand(args);
+    process.exit(success ? 0 : 1);
+    return;
+  }
+
+  // 默认行为：启动服务器
+  await startServer();
+}
+
+/**
+ * 启动服务器
+ */
+async function startServer() {
   console.log(`
   ██████╗██╗   ██╗██████╗ ███████╗██████╗
  ██╔════╝██║   ██║██╔══██╗██╔════╝██╔══██╗

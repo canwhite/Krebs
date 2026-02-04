@@ -15,6 +15,10 @@ export type {
   BuildPromptOptions,
   SkillsChangeEvent,
   SkillsStats,
+  SkillInstallSpec,
+  SkillInstallResult,
+  SkillInstallRequest,
+  SkillInstallStatus,
 } from "./types.js";
 
 // Facade 层（主要对外接口）
@@ -39,6 +43,12 @@ export {
   SkillsHotReload,
   createSkillsHotReload,
 } from "./hot-reload.js";
+
+// 安装器
+export {
+  SkillInstaller,
+  getSkillInstaller,
+} from "./installer.js";
 
 // 旧的技能系统（保留向后兼容）
 export { SkillRegistry, createSkillRegistry } from "./base.js";

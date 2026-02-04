@@ -11,8 +11,10 @@ import path from "node:path";
 import {
   loadSkillsFromDir,
   parseFrontmatter,
+  formatSkillsForPrompt,
   type Skill,
 } from "@mariozechner/pi-coding-agent";
+import { parse } from "yaml";
 
 import { createLogger } from "@/shared/logger.js";
 
@@ -20,6 +22,7 @@ import type {
   KrebsSkillMetadata,
   ParsedFrontmatter,
   SkillEntry,
+  SkillInstallSpec,
   SkillSnapshot,
 } from "./types.js";
 
@@ -100,6 +103,12 @@ export class SkillsLoader {
         ...parsed,
       } as ParsedFrontmatter;
 
+      // 手动解析install字段（pi-coding-agent可能不包含自定义字段）
+      const installSpecs = this.parseInstallFromYaml(content);
+      if (installSpecs && installSpecs.length > 0) {
+        frontmatter.install = installSpecs;
+      }
+
       // 解析 Krebs 特定的元数据
       metadata = this.parseKrebsMetadata(parsed);
     } catch (error) {
@@ -112,6 +121,29 @@ export class SkillsLoader {
       metadata,
       enabled: true, // 默认启用
     };
+  }
+
+  /**
+   * 从YAML frontmatter中解析install字段
+   */
+  private parseInstallFromYaml(content: string): SkillInstallSpec[] | undefined {
+    try {
+      // 提取frontmatter（---之间的内容）
+      const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
+      if (!frontmatterMatch) return undefined;
+
+      const yamlText = frontmatterMatch[1];
+      const parsed = parse(yamlText) as Record<string, unknown>;
+
+      if (!Array.isArray(parsed.install)) {
+        return undefined;
+      }
+
+      return parsed.install as SkillInstallSpec[];
+    } catch (error) {
+      logger.debug("Failed to parse install field:", error);
+      return undefined;
+    }
   }
 
   /**
@@ -142,7 +174,6 @@ export class SkillsLoader {
         homepage: typeof krebs.homepage === "string" ? krebs.homepage : undefined,
         // 保留用于未来迭代的字段
         requires: this.parseRequires(krebs.requires),
-        install: this.parseInstallSpecs(krebs.install),
       };
     } catch (error) {
       logger.debug(`Failed to parse Krebs metadata:`, error);
@@ -182,44 +213,6 @@ export class SkillsLoader {
   }
 
   /**
-   * 解析 install 规范（预留）
-   */
-  private parseInstallSpecs(value: unknown): KrebsSkillMetadata["install"] {
-    if (!Array.isArray(value)) {
-      return undefined;
-    }
-
-    return value
-      .map((spec) => {
-        if (typeof spec !== "object" || !spec) {
-          return undefined;
-        }
-
-        const obj = spec as Record<string, unknown>;
-        const kind = obj.kind;
-
-        if (
-          typeof kind !== "string" ||
-          !["brew", "node", "go", "uv", "download"].includes(kind)
-        ) {
-          return undefined;
-        }
-
-        return {
-          kind: kind as "brew" | "node" | "go" | "uv" | "download",
-          label: typeof obj.label === "string" ? obj.label : undefined,
-          bins: this.parseStringArray(obj.bins),
-          os: this.parseStringArray(obj.os),
-          formula: typeof obj.formula === "string" ? obj.formula : undefined,
-          package: typeof obj.package === "string" ? obj.package : undefined,
-          module: typeof obj.module === "string" ? obj.module : undefined,
-          url: typeof obj.url === "string" ? obj.url : undefined,
-        };
-      })
-      .filter((spec): spec is NonNullable<typeof spec> => Boolean(spec));
-  }
-
-  /**
    * 构建技能快照
    */
   buildSnapshot(entries: SkillEntry[], version: number = 1): SkillSnapshot {
@@ -245,7 +238,7 @@ export class SkillsLoader {
    */
   private formatSkillsForPrompt(skills: Skill[]): string {
     try {
-      const { formatSkillsForPrompt } = require("@mariozechner/pi-coding-agent");
+      // 动态导入以支持ESM
       return formatSkillsForPrompt(skills);
     } catch (error) {
       logger.error("Failed to format skills for prompt:", error);
