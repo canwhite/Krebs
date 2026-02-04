@@ -49,6 +49,31 @@ export interface IChatService {
     sessionId: string,
     onChunk: (chunk: string) => void
   ): Promise<AgentResult>;
+
+  /**
+   * 获取所有 Skills 列表
+   *
+   * @param agentId - Agent ID
+   * @returns Skills 列表
+   */
+  getSkillsList?(agentId: string): Promise<unknown[]>;
+
+  /**
+   * 获取单个 Skill 详情
+   *
+   * @param agentId - Agent ID
+   * @param skillName - Skill 名称
+   * @returns Skill 详情
+   */
+  getSkillDetails?(agentId: string, skillName: string): Promise<unknown | null>;
+
+  /**
+   * 获取 Skills 统计信息
+   *
+   * @param agentId - Agent ID
+   * @returns 统计信息
+   */
+  getSkillsStats?(agentId: string): Promise<unknown | null>;
 }
 
 /**
@@ -90,6 +115,66 @@ export class AgentChatService implements IChatService {
     }
 
     return orchestrator.processStream(message, sessionId, onChunk);
+  }
+
+  /**
+   * 获取所有 Skills 列表
+   */
+  async getSkillsList(agentId: string): Promise<unknown[]> {
+    const orchestrator = this.agentManager.getOrchestrator(agentId);
+
+    if (!orchestrator) {
+      throw new Error(`Agent not found: ${agentId}`);
+    }
+
+    // 获取 SkillsManager（如果可用）
+    const skillsManager = (orchestrator as any).deps?.skillsManager;
+
+    if (!skillsManager) {
+      return [];
+    }
+
+    return skillsManager.getAllSkills();
+  }
+
+  /**
+   * 获取单个 Skill 详情
+   */
+  async getSkillDetails(agentId: string, skillName: string): Promise<unknown | null> {
+    const orchestrator = this.agentManager.getOrchestrator(agentId);
+
+    if (!orchestrator) {
+      throw new Error(`Agent not found: ${agentId}`);
+    }
+
+    // 获取 SkillsManager（如果可用）
+    const skillsManager = (orchestrator as any).deps?.skillsManager;
+
+    if (!skillsManager) {
+      return null;
+    }
+
+    return skillsManager.getSkillByName(skillName) || null;
+  }
+
+  /**
+   * 获取 Skills 统计信息
+   */
+  async getSkillsStats(agentId: string): Promise<unknown | null> {
+    const orchestrator = this.agentManager.getOrchestrator(agentId);
+
+    if (!orchestrator) {
+      throw new Error(`Agent not found: ${agentId}`);
+    }
+
+    // 获取 SkillsManager（如果可用）
+    const skillsManager = (orchestrator as any).deps?.skillsManager;
+
+    if (!skillsManager) {
+      return null;
+    }
+
+    return skillsManager.getStats();
   }
 }
 

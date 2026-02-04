@@ -18,7 +18,8 @@ import type {
 } from "@/types/index.js";
 import { createLogger } from "../../shared/logger.js";
 import type { Agent } from "./agent.js";
-import type { Skill, SkillRegistry } from "../skills/index.js";
+import type { Skill, SkillRegistry } from "../skills/base.js";
+import type { SkillsManager } from "../skills/index.js";
 
 const log = createLogger("Orchestrator");
 
@@ -40,6 +41,11 @@ export interface OrchestratorConfig {
    * 是否在日志中显示技能触发信息
    */
   logSkillTriggers?: boolean;
+
+  /**
+   * 是否启用 Skills 系统（基于 pi-coding-agent）
+   */
+  enableSkillsSystem?: boolean;
 }
 
 /**
@@ -52,9 +58,14 @@ export interface OrchestratorDeps {
   agent: Agent;
 
   /**
-   * 技能注册表
+   * 技能注册表（旧的系统，保留用于向后兼容）
    */
   skillRegistry: SkillRegistry;
+
+  /**
+   * Skills Manager（新的系统，基于 pi-coding-agent）
+   */
+  skillsManager?: SkillsManager;
 }
 
 /**
@@ -78,12 +89,14 @@ export class AgentOrchestrator {
    * 1. 如果启用技能，检查是否有技能被触发
    * 2. 如果有技能，执行技能并返回结果
    * 3. 如果没有技能或技能执行失败，委托给 Agent 处理
+   *
+   * 注意：新的 Skills 系统（pi-coding-agent）通过 SkillsManager 注入到 Agent 的 system prompt 中
    */
   async process(
     userMessage: string,
     sessionId: string
   ): Promise<AgentResult> {
-    // 如果启用技能调度，先检查技能
+    // 如果启用技能调度，先检查技能（旧的系统）
     if (this.config.enableSkills) {
       const skillResult = await this.tryExecuteSkills(
         userMessage,
@@ -97,6 +110,7 @@ export class AgentOrchestrator {
     }
 
     // 没有技能匹配或技能执行失败，委托给 Agent
+    // Agent 会使用 SkillsManager 构建的技能 Prompt
     return this.deps.agent.process(userMessage, sessionId);
   }
 

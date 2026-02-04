@@ -10,6 +10,7 @@ import type {
   EmbeddingResult,
 } from "@/types/index.js";
 import type { LLMProvider, ProviderConfig } from "./base.js";
+import type { Tool } from "@/agent/tools/index.js";
 
 export class AnthropicProvider implements LLMProvider {
   readonly name = "anthropic";
@@ -28,8 +29,15 @@ export class AnthropicProvider implements LLMProvider {
 
   async chat(
     messages: Message[],
-    options: ChatCompletionOptions
-  ): Promise<ChatCompletionResult> {
+    options: ChatCompletionOptions & { tools?: Tool[] }
+  ): Promise<ChatCompletionResult & { toolCalls?: any[] }> {
+    // 转换工具格式为 Anthropic 格式
+    const anthropicTools = options.tools?.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      input_schema: tool.inputSchema as any, // Type assertion: our tools conform to Anthropic's format
+    }));
+
     const response = await this.client.messages.create({
       model: options.model,
       messages: messages
@@ -41,8 +49,33 @@ export class AnthropicProvider implements LLMProvider {
       system: messages.find((m) => m.role === "system")?.content,
       max_tokens: options.maxTokens ?? 4096,
       temperature: options.temperature,
+      tools: anthropicTools && anthropicTools.length > 0 ? anthropicTools : undefined,
     });
 
+    // 检查是否有 tool_use
+    const toolUseBlocks = response.content.filter((block) => block.type === "tool_use");
+
+    if (toolUseBlocks.length > 0) {
+      // 有工具调用
+      const toolCalls = toolUseBlocks.map((block: any) => ({
+        id: block.id,
+        name: block.name,
+        arguments: block.input,
+      }));
+
+      return {
+        content: "",
+        toolCalls,
+        usage: {
+          promptTokens: response.usage.input_tokens,
+          completionTokens: response.usage.output_tokens,
+          totalTokens:
+            response.usage.input_tokens + response.usage.output_tokens,
+        },
+      };
+    }
+
+    // 普通文本响应
     const content =
       response.content[0]?.type === "text" ? response.content[0].text : "";
 

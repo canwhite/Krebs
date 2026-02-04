@@ -11,6 +11,7 @@ import type {
   EmbeddingResult,
 } from "@/types/index.js";
 import type { LLMProvider, ProviderConfig } from "./base.js";
+import type { Tool } from "@/agent/tools/index.js";
 
 export class DeepSeekProvider implements LLMProvider {
   readonly name = "deepseek";
@@ -29,8 +30,18 @@ export class DeepSeekProvider implements LLMProvider {
 
   async chat(
     messages: Message[],
-    options: ChatCompletionOptions
-  ): Promise<ChatCompletionResult> {
+    options: ChatCompletionOptions & { tools?: Tool[] }
+  ): Promise<ChatCompletionResult & { toolCalls?: any[] }> {
+    // 转换工具格式为 OpenAI 格式
+    const openaiTools = options.tools?.map((tool) => ({
+      type: "function" as const,
+      function: {
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.inputSchema,
+      },
+    }));
+
     const response = await this.client.chat.completions.create({
       model: options.model,
       messages: messages.map((m) => ({
@@ -39,9 +50,31 @@ export class DeepSeekProvider implements LLMProvider {
       })),
       temperature: options.temperature,
       max_tokens: options.maxTokens,
+      tools: openaiTools && openaiTools.length > 0 ? openaiTools : undefined,
     });
 
-    const content = response.choices[0]?.message.content ?? "";
+    const message = response.choices[0]?.message;
+
+    // 检查是否有 tool_calls
+    if (message?.tool_calls && message.tool_calls.length > 0) {
+      const toolCalls = message.tool_calls.map((tc) => ({
+        id: tc.id,
+        name: tc.function.name,
+        arguments: JSON.parse(tc.function.arguments),
+      }));
+
+      return {
+        content: "",
+        toolCalls,
+        usage: {
+          promptTokens: response.usage?.prompt_tokens ?? 0,
+          completionTokens: response.usage?.completion_tokens ?? 0,
+          totalTokens: response.usage?.total_tokens ?? 0,
+        },
+      };
+    }
+
+    const content = message?.content ?? "";
 
     return {
       content,

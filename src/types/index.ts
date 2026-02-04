@@ -15,6 +15,7 @@ export interface ChatCompletionOptions {
   temperature?: number;
   maxTokens?: number;
   stream?: boolean;
+  tools?: any[]; // Tool[] from agent/tools - using any to avoid circular dependency
 }
 
 export interface ChatCompletionResult {

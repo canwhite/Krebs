@@ -18,6 +18,7 @@ import type { AgentConfig } from "@/types/index.js";
 import type { LLMProvider } from "@/provider/index.js";
 import type { AgentDeps, Agent } from "./agent.js";
 import type { SkillRegistry } from "../skills/index.js";
+import type { Tool, ToolConfig } from "../tools/index.js";
 import { Agent as AgentClass } from "./agent.js";
 import { AgentOrchestrator, OrchestratorConfig } from "./orchestrator.js";
 // 直接导入 SkillRegistry 以避免循环依赖
@@ -47,6 +48,11 @@ export interface AgentManagerConfig {
    * 是否在日志中显示技能触发信息
    */
   logSkillTriggers?: boolean;
+
+  /**
+   * 工具配置
+   */
+  toolConfig?: ToolConfig;
 }
 
 /**
@@ -75,6 +81,11 @@ export interface AgentManagerDeps {
    * 技能注册表（可选，如果不提供则创建新的）
    */
   skillRegistry?: SkillRegistry;
+
+  /**
+   * 工具列表（可选）
+   */
+  tools?: Tool[];
 }
 
 export class AgentManager {
@@ -83,6 +94,8 @@ export class AgentManager {
   private deps: AgentDeps;
   private skillRegistry: SkillRegistry;
   private config: AgentManagerConfig;
+  private tools: Tool[] = [];
+  private toolConfig: ToolConfig = { enabled: true, maxIterations: 10 };
 
   constructor(config: AgentManagerConfig, deps: AgentManagerDeps) {
     this.config = config;
@@ -95,13 +108,51 @@ export class AgentManager {
 
     // 管理 SkillRegistry（替代全局单例）
     this.skillRegistry = deps.skillRegistry || this.createDefaultSkillRegistry();
+
+    // 管理工具
+    this.tools = deps.tools || [];
+    if (config.toolConfig) {
+      this.toolConfig = { ...this.toolConfig, ...config.toolConfig };
+    }
   }
 
   /**
-   * 创建 Agent
+   * 注册工具
    */
+  registerTools(tools: Tool[]): void {
+    this.tools = [...this.tools, ...tools];
+    console.log(`[AgentManager] Registered ${tools.length} tools (total: ${this.tools.length})`);
+  }
+
+  /**
+   * 获取工具列表
+   */
+  getTools(): Tool[] {
+    return this.tools;
+  }
+
+  /**
+   * 设置工具配置
+   */
+  setToolConfig(config: Partial<ToolConfig>): void {
+    this.toolConfig = { ...this.toolConfig, ...config };
+  }
+
+  /**
+   * 获取工具配置
+   */
+  getToolConfig(): ToolConfig {
+    return this.toolConfig;
+  }
   createAgent(agentConfig: AgentConfig): Agent {
-    const agent = new AgentClass(agentConfig, this.deps);
+    // 创建 AgentDeps，包含工具
+    const agentDeps: AgentDeps = {
+      ...this.deps,
+      tools: this.tools,
+      toolConfig: this.toolConfig,
+    };
+
+    const agent = new AgentClass(agentConfig, agentDeps);
     this.agents.set(agentConfig.id, agent);
 
     // 为每个 Agent 创建对应的 Orchestrator

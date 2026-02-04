@@ -19,6 +19,7 @@ import { AgentManager } from "@/agent/core/index.js";
 import { GatewayHttpServer, GatewayWsServer } from "@/gateway/index.js";
 import { createChatService } from "@/gateway/service/chat-service.js";
 import { getBuiltinSkills } from "@/agent/skills/index.js";
+import { getBuiltinTools } from "@/agent/tools/index.js";
 import { CommandLane, setConcurrency } from "@/scheduler/lanes.js";
 import { SessionStore } from "@/storage/index.js";
 import fs from "node:fs/promises";
@@ -133,6 +134,11 @@ async function main() {
     skillRegistry.register(skill);
   }
   logger.info(`已注册 ${builtinSkills.length} 个内置技能`);
+
+  // 注册工具（Tool Calling）
+  const builtinTools = getBuiltinTools();
+  agentManager.registerTools(builtinTools);
+  logger.info(`已注册 ${builtinTools.length} 个工具: ${builtinTools.map(t => t.name).join(", ")}`);
 
   // 创建默认 Agent
   if (provider) {

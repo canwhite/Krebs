@@ -44,7 +44,12 @@ agent (核心层)
   │   ├─ agent.ts (Agent - LLM处理)
   │   ├─ orchestrator.ts (Orchestrator - 技能调度)
   │   └─ manager.ts (AgentManager - 依赖管理)
-  └─ skills (技能系统)
+  └─ skills (技能系统 - 基于 pi-coding-agent)
+      ├─ types.ts (类型定义)
+      ├─ skills-manager.ts (Facade - 统一接口)
+      ├─ loader.ts (技能加载器)
+      ├─ formatter.ts (Prompt 构建器)
+      └─ hot-reload.ts (热加载管理)
   ↓
 gateway (接入层)
   ├─ service/chat-service.ts (ChatService - 服务接口)
@@ -204,6 +209,18 @@ CREATE TABLE embedding_cache (
 - 实时：文件变化自动更新索引
 
 **新增功能**（2026-02-04）：
+
+✅ **Skills 系统（基于 pi-coding-agent）**：
+  - 使用 `@mariozechner/pi-coding-agent` 库
+  - 支持 Bundled Skills（内置技能）
+  - Frontmatter 解析（SKILL.md 格式）
+  - 技能热加载（chokidar）
+  - 技能 Prompt 注入到 LLM
+  - 模块化架构（Facade 模式）
+  - 技能查询接口（ChatService）
+  - 示例技能：github, filesystem, web-search
+
+✅ **记忆保存功能**：
 - ✅ **记忆保存功能**：
   - 自动保存对话到每日日志（`workspace/memory/YYYY-MM-DD.md`）
   - 手动保存重要信息到 `MEMORY.md`
@@ -442,8 +459,10 @@ npm test -- logger.test.ts
 - [x] 向量搜索完整实现（sqlite-vec 集成）
 - [x] 记忆保存功能（每日日志 + 手动保存）
 - [x] 集成测试（28/28 通过）
-- [ ] 技能系统增强（支持多位置加载）
-- [ ] 技能热加载
+- [x] **Skills 系统**（基于 @mariozechner/pi-coding-agent）
+- [x] 技能热加载（chokidar）
+- [ ] 技能多位置加载（Managed、Workspace、Extra）
+- [ ] 技能依赖自动安装
 - [ ] 性能监控
 - [ ] 文档完善
 
