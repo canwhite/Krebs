@@ -2,7 +2,7 @@
  * Skills 依赖安装器
  *
  * 参考 openclaw-cn-ds 实现
- * 支持：brew, node, go, uv, download
+ * 支持：brew, node, go, uv, download, python, ruby, cargo
  */
 
 import { exec } from "node:child_process";
@@ -33,11 +33,24 @@ const DEFAULT_TIMEOUT = 120000; // 2分钟
 type NodeManager = "npm" | "pnpm" | "yarn" | "bun";
 
 /**
+ * Python包管理器
+ */
+type PythonManager = "pip" | "pipx" | "poetry" | "uv";
+
+/**
  * 检测可用的Node包管理器
  */
 function detectNodeManager(): NodeManager {
   // 默认返回npm（可以后续扩展为动态检测）
   return "npm";
+}
+
+/**
+ * 检测可用的Python包管理器
+ */
+function detectPythonManager(): PythonManager {
+  // 默认返回pip（可以后续扩展为动态检测）
+  return "pip";
 }
 
 /**
@@ -72,11 +85,31 @@ function buildNodeInstallCommand(
 }
 
 /**
+ * 构建Python安装命令
+ */
+function buildPythonInstallCommand(
+  packageName: string,
+  manager: PythonManager
+): string[] {
+  switch (manager) {
+    case "pipx":
+      return ["pipx", "install", packageName];
+    case "poetry":
+      return ["poetry", "add", packageName];
+    case "uv":
+      return ["uv", "tool", "install", packageName];
+    default:
+      return ["pip", "install", "--upgrade", packageName];
+  }
+}
+
+/**
  * 构建安装命令
  */
 function buildInstallCommand(
   spec: SkillInstallSpec,
-  nodeManager: NodeManager
+  nodeManager: NodeManager,
+  pythonManager: PythonManager
 ): { argv: string[] | null; error?: string } {
   switch (spec.kind) {
     case "brew":
@@ -94,6 +127,19 @@ function buildInstallCommand(
     case "uv":
       if (!spec.uvPackage && !spec.pythonPackage) return { argv: null, error: "missing uv package" };
       return { argv: ["uv", "tool", "install", spec.uvPackage || spec.pythonPackage!] };
+
+    case "python":
+      if (!spec.pythonPackage) return { argv: null, error: "missing python package" };
+      const manager = spec.pythonInstaller ?? pythonManager;
+      return { argv: buildPythonInstallCommand(spec.pythonPackage, manager) };
+
+    case "ruby":
+      if (!spec.gemPackage) return { argv: null, error: "missing ruby gem package" };
+      return { argv: ["gem", "install", spec.gemPackage] };
+
+    case "cargo":
+      if (!spec.cratePackage) return { argv: null, error: "missing cargo crate package" };
+      return { argv: ["cargo", "install", spec.cratePackage] };
 
     case "download":
       return { argv: null, error: "download install handled separately" };
@@ -322,11 +368,14 @@ async function installDownloadSpec(
  */
 export class SkillInstaller {
   private nodeManager: NodeManager;
+  private pythonManager: PythonManager;
   private installCache = new Map<string, boolean>(); // installId -> installed
 
   constructor() {
     this.nodeManager = detectNodeManager();
+    this.pythonManager = detectPythonManager();
     logger.info(`Detected Node package manager: ${this.nodeManager}`);
+    logger.info(`Detected Python package manager: ${this.pythonManager}`);
   }
 
   /**
@@ -373,7 +422,7 @@ export class SkillInstaller {
     }
 
     // 构建命令
-    const { argv, error } = buildInstallCommand(spec, this.nodeManager);
+    const { argv, error } = buildInstallCommand(spec, this.nodeManager, this.pythonManager);
     if (!argv || error) {
       return {
         ok: false,

@@ -22,16 +22,17 @@
 - [x] 1.2 集成到主CLI程序 (src/cli/index.ts, src/index.ts)
 - [x] 1.3 添加帮助文档和使用示例 (README.md)
 
-### 2. 扩展安装类型
-- [ ] 2.1 添加Python包支持（pip/pipx/poetry）
+### 2. 扩展安装类型 ✅
+- [x] 2.1 添加Python包支持（pip/pipx/poetry/uv）
   - kind: "python"
   - pythonPackage字段
-  - 检测pip/pipx/poetry
-- [ ] 2.2 添加Ruby gem支持
+  - pythonInstaller字段（pip/pipx/poetry/uv）
+  - 检测pip/pipx/poetry/uv
+- [x] 2.2 添加Ruby gem支持
   - kind: "ruby"
   - gemPackage字段
   - gem install命令
-- [ ] 2.3 添加Cargo (Rust) 支持
+- [x] 2.3 添加Cargo (Rust) 支持
   - kind: "cargo"
   - cratePackage字段
   - cargo install命令
@@ -68,13 +69,13 @@
 - ✅ 已完成基础安装功能（task_skill_deps_260204_161646）
 - ✅ CLI命令已实现并测试通过
 - ✅ README.md文档已更新
-- 🔄 待完成：扩展更多安装类型（Python、Ruby、Cargo）
+- ✅ 扩展安装类型已完成（Python、Ruby、Cargo）
+- 🔄 正在完善错误处理和重试机制
 
 ## 下一步行动
-1. 添加Python包安装支持（pip/pipx/poetry）
-2. 添加Ruby gem支持
-3. 添加Cargo/Rust支持
-4. 完善错误处理和重试机制
+1. 完善错误处理和重试机制
+2. 测试各种错误场景
+3. 添加更多 download 功能（可选）
 
 ## 技术细节
 

@@ -32,7 +32,7 @@ export interface ParsedFrontmatter {
  */
 export interface SkillInstallSpec {
   /** 安装类型 */
-  kind: "brew" | "node" | "go" | "uv" | "download";
+  kind: "brew" | "node" | "go" | "uv" | "download" | "python" | "ruby" | "cargo";
 
   /** 安装ID（可选） */
   id?: string;
@@ -74,8 +74,17 @@ export interface SkillInstallSpec {
   /** UV 包名（kind=uv） */
   uvPackage?: string;
 
-  /** Python 包名（kind=uv） - 别名 */
+  /** Python 包名（kind=python 或 kind=uv） */
   pythonPackage?: string;
+
+  /** Python 安装器类型（kind=python）: pip, pipx, poetry, uv */
+  pythonInstaller?: "pip" | "pipx" | "poetry" | "uv";
+
+  /** Ruby gem 包名（kind=ruby） */
+  gemPackage?: string;
+
+  /** Cargo crate 包名（kind=cargo） */
+  cratePackage?: string;
 
   /** 下载 URL（kind=download） */
   url?: string;

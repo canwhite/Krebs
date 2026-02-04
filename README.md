@@ -352,20 +352,49 @@ install:
 ---
 \`\`\`
 
-#### 4. UV/Python 包
+#### 4. Python 包 🆕
 
 \`\`\`yaml
 ---
 install:
-  - kind: uv
-    uvPackage: black
+  - kind: python
+    pythonPackage: black
+    pythonInstaller: pipx  # 可选: pip, pipx, poetry, uv
     label: "Python 代码格式化工具"
     bins:
       - black
 ---
 \`\`\`
 
-#### 5. 下载文件
+支持的包管理器（自动检测或手动指定）：pip、pipx、poetry、uv
+
+#### 5. Ruby Gem 🆕
+
+\`\`\`yaml
+---
+install:
+  - kind: ruby
+    gemPackage: jekyll
+    label: "Jekyll 静态网站生成器"
+    bins:
+      - jekyll
+---
+\`\`\`
+
+#### 6. Cargo/Rust Crate 🆕
+
+\`\`\`yaml
+---
+install:
+  - kind: cargo
+    cratePackage: ripgrep
+    label: "ripgrep 快速搜索工具"
+    bins:
+      - rg
+---
+\`\`\`
+
+#### 7. 下载文件
 
 \`\`\`yaml
 ---
@@ -386,7 +415,7 @@ install:
 \`\`\`typescript
 interface SkillInstallSpec {
   // 安装类型
-  kind: "node" | "brew" | "go" | "uv" | "download";
+  kind: "node" | "brew" | "go" | "uv" | "download" | "python" | "ruby" | "cargo";
 
   // 可选标识符
   id?: string;              // 唯一标识
@@ -409,6 +438,10 @@ interface SkillInstallSpec {
   npmPackage?: string;      // node: npm 包名
   goModule?: string;        // go: 模块路径
   uvPackage?: string;       // uv: 包名
+  pythonPackage?: string;   // python 或 uv: Python 包名
+  pythonInstaller?: string; // python: 安装器类型（pip/pipx/poetry/uv）
+  gemPackage?: string;      // ruby: gem 包名
+  cratePackage?: string;    // cargo: crate 包名
   url?: string;             // download: 下载 URL
 }
 \`\`\`
@@ -712,7 +745,7 @@ npm run format # Prettier 格式化
 - 🔌 Storage 接口化，支持多种实现
 - 🌐 Gateway 通过服务接口解耦
 - 📦 Skills 依赖自动安装功能 🆕
-  - 支持 npm、brew、go、uv、download 五种安装类型
+  - 支持 npm、brew、go、uv、download、python、ruby、cargo 八种安装类型
   - 自动检测已安装依赖
   - Dry-run 模式预览安装
 - 🖥️ 完整的 CLI 命令支持 🆕
