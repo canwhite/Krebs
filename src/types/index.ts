@@ -57,6 +57,9 @@ export interface AgentResult {
     completionTokens: number;
     totalTokens: number;
   };
+  success?: boolean;  // 用于技能执行结果
+  data?: unknown;     // 用于技能返回额外数据
+  error?: string;     // 用于错误信息
 }
 
 // ============ Tool 类型 ============

@@ -1,9 +1,15 @@
 /**
  * Gateway HTTP 服务器
+ *
+ * 架构改进：
+ * - 使用 ChatService 接口进行聊天处理
+ * - 使用 AgentManager 进行 Agent 管理
+ * - 解耦 Gateway 和具体实现
  */
 
 import express from "express";
-import type { AgentManager } from "@/agent/index.js";
+import type { AgentManager } from "@/agent/core/index.js";
+import type { IChatService } from "../service/chat-service.js";
 import type {
   RequestFrame,
   ResponseFrame,
@@ -14,17 +20,20 @@ import type {
 
 export class GatewayHttpServer {
   private readonly app: express.Application;
+  private readonly chatService: IChatService;
   private readonly agentManager: AgentManager;
   private readonly port: number;
   private readonly host: string;
 
   constructor(
-    agentManager: AgentManager,
+    chatService: IChatService,  // 使用 ChatService 接口
     port: number,
-    host: string = "0.0.0.0"
+    host: string = "0.0.0.0",
+    agentManager?: AgentManager  // 可选的 AgentManager（用于管理接口）
   ) {
     this.app = express();
-    this.agentManager = agentManager;
+    this.chatService = chatService;
+    this.agentManager = agentManager!;
     this.port = port;
     this.host = host;
 
@@ -136,12 +145,9 @@ export class GatewayHttpServer {
   }
 
   private async handleChatSend(params: ChatSendParams) {
-    const agent = this.agentManager.getAgent(params.agentId);
-    if (!agent) {
-      throw new Error(`Agent not found: ${params.agentId}`);
-    }
-
-    const result = await agent.process(
+    // 使用 ChatService 接口进行聊天处理
+    const result = await this.chatService.process(
+      params.agentId,
       params.message,
       params.sessionId
     );

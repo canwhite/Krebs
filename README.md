@@ -154,7 +154,7 @@ console.log("Received:", data);
 
 ## 项目结构
 
-\`\`\`
+```
 krebs/
 ├── src/
 │ ├── agent/ # Agent 层
@@ -183,7 +183,7 @@ krebs/
 ├── package.json
 ├── tsconfig.json
 └── README.md
-\`\`\`
+```
 
 ## 特性
 

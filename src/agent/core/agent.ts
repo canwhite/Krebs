@@ -1,16 +1,24 @@
 /**
  * Agent 核心实现
+ *
+ * 职责：
+ * - LLM 对话管理（调用 AI 模型）
+ * - 历史记录存储
+ * - 流式响应处理
+ *
+ * 设计原则：
+ * - 单一职责：专注于 LLM 对话管理
+ * - 技能调度已移至 Orchestrator 层
+ * - 依赖注入：所有依赖通过构造函数注入
  */
 
 import type {
   AgentConfig,
-  AgentContext,
   AgentResult,
   Message,
 } from "@/types/index.js";
 import type { LLMProvider } from "@/provider/index.js";
 import { CommandLane, enqueueInLane } from "@/scheduler/lanes.js";
-import { globalSkillRegistry } from "../skills/index.js";
 
 export interface AgentDeps {
   provider: LLMProvider;
@@ -74,35 +82,6 @@ export class Agent {
         timestamp: Date.now(),
       },
     ];
-
-    const context: AgentContext = {
-      sessionId,
-      messages,
-      metadata: this.config as unknown as Record<string, unknown>,
-    };
-
-    // 检查是否有技能可以处理
-    const triggeredSkills = globalSkillRegistry.findByTrigger(userMessage);
-    if (triggeredSkills.length > 0) {
-      console.log(`[Agent] Triggered skills: ${triggeredSkills.map((s) => s.name).join(", ")}`);
-
-      for (const skill of triggeredSkills) {
-        const result = await skill.execute(context);
-        if (result.success && result.response) {
-          // 保存技能响应
-          messages.push({
-            role: "assistant",
-            content: result.response,
-            timestamp: Date.now(),
-          });
-          await this.saveHistory(sessionId, messages);
-
-          return {
-            response: result.response,
-          };
-        }
-      }
-    }
 
     // 使用 LLM 生成响应
     const response = await this.deps.provider.chat(messages, {

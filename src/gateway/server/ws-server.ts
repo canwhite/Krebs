@@ -1,9 +1,13 @@
 /**
  * Gateway WebSocket 服务器
+ *
+ * 架构改进：
+ * - 使用 ChatService 接口进行聊天处理
+ * - 解耦 Gateway 和具体实现
  */
 
 import { WebSocketServer, WebSocket } from "ws";
-import type { AgentManager } from "@/agent/index.js";
+import type { IChatService } from "../service/chat-service.js";
 import type {
   RequestFrame,
   ResponseFrame,
@@ -13,21 +17,22 @@ import type {
 
 export class GatewayWsServer {
   private readonly wss: WebSocketServer;
-  private readonly agentManager: AgentManager;
+  private readonly chatService: IChatService;
   private readonly port: number;
   private readonly host: string;
 
   constructor(
-    agentManager: AgentManager,
+    chatService: IChatService,
     port: number,
     host: string = "0.0.0.0"
+    // agentManager 参数已移除，如需要可在未来添加
   ) {
-    this.agentManager = agentManager;
+    this.chatService = chatService;
     this.port = port;
     this.host = host;
 
     this.wss = new WebSocketServer({
-      port: this.port + 1, // WS port = HTTP port + 1
+      port: this.port,
       host: this.host,
     });
 
@@ -89,27 +94,18 @@ export class GatewayWsServer {
     switch (frame.method) {
       case "chat.send": {
         const params = frame.params as ChatSendParams;
-        const agent = this.agentManager.getAgent(params.agentId);
-        if (!agent) {
-          return {
-            id: frame.id,
-            error: {
-              code: 2,
-              message: `Agent not found: ${params.agentId}`,
-            },
-          };
-        }
 
         if (params.stream) {
           // 流式响应
-          void this.handleStreamChat(agent, params, ws);
+          void this.handleStreamChat(params, ws);
           return {
             id: frame.id,
             result: { streaming: true },
           };
         } else {
-          // 普通响应
-          const result = await agent.process(
+          // 普通响应（使用 ChatService）
+          const result = await this.chatService.process(
+            params.agentId,
             params.message,
             params.sessionId
           );
@@ -135,12 +131,12 @@ export class GatewayWsServer {
   }
 
   private async handleStreamChat(
-    agent: any,
     params: ChatSendParams,
     ws: WebSocket
   ): Promise<void> {
     try {
-      await agent.processStream(
+      await this.chatService.processStream(
+        params.agentId,
         params.message,
         params.sessionId,
         (chunk: string) => {

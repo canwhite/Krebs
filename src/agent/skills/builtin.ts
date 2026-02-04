@@ -3,8 +3,7 @@
  */
 
 import type { AgentContext } from "@/types/index.js";
-import type { Skill } from "./base.js";
-import { globalSkillRegistry } from "./base.js";
+import type { Skill, SkillRegistry } from "./base.js";
 
 /**
  * 总结技能
@@ -143,12 +142,29 @@ export const problemSolvingSkill: Skill = {
 };
 
 /**
- * 注册所有内置技能
+ * 注册所有内置技能到指定的注册表
+ *
+ * @param registry - 技能注册表实例
  */
-export function registerBuiltinSkills(): void {
-  globalSkillRegistry.register(summarizeSkill);
-  globalSkillRegistry.register(explainCodeSkill);
-  globalSkillRegistry.register(translateSkill);
-  globalSkillRegistry.register(creativeWritingSkill);
-  globalSkillRegistry.register(problemSolvingSkill);
+export function registerBuiltinSkills(registry: SkillRegistry): void {
+  registry.register(summarizeSkill);
+  registry.register(explainCodeSkill);
+  registry.register(translateSkill);
+  registry.register(creativeWritingSkill);
+  registry.register(problemSolvingSkill);
+}
+
+/**
+ * 获取所有内置技能列表
+ *
+ * @returns 内置技能数组
+ */
+export function getBuiltinSkills(): Skill[] {
+  return [
+    summarizeSkill,
+    explainCodeSkill,
+    translateSkill,
+    creativeWritingSkill,
+    problemSolvingSkill,
+  ];
 }

@@ -1,6 +1,12 @@
 #!/usr/bin/env node
 /**
  * krebs CN 主入口
+ *
+ * 架构更新：
+ * - 使用 Orchestrator 层进行技能调度
+ * - 通过依赖注入管理所有组件
+ * - 使用 ChatService 接口解耦 Gateway
+ * - 移除全局单例
  */
 
 import { loadConfig, logger } from "@/shared/index.js";
@@ -9,10 +15,12 @@ import {
   createOpenAIProvider,
   createDeepSeekProvider,
 } from "@/provider/index.js";
-import { AgentManager } from "@/agent/index.js";
+import { AgentManager } from "@/agent/core/index.js";
 import { GatewayHttpServer, GatewayWsServer } from "@/gateway/index.js";
-import { registerBuiltinTools, registerBuiltinSkills } from "@/agent/index.js";
+import { createChatService } from "@/gateway/service/chat-service.js";
+import { getBuiltinSkills } from "@/agent/skills/index.js";
 import { CommandLane, setConcurrency } from "@/scheduler/lanes.js";
+import { SessionStore } from "@/storage/index.js";
 import fs from "node:fs/promises";
 
 /**
@@ -93,13 +101,38 @@ async function main() {
     }
   }
 
-  // 初始化 Agent Manager
-  const agentManager = new AgentManager(provider!, config.storage.dataDir);
+  // 初始化存储
+  const sessionStore = new SessionStore(config.storage.dataDir);
 
-  // 注册内置 Tools 和 Skills
-  registerBuiltinTools();
-  registerBuiltinSkills();
-  logger.info("已注册内置工具和技能");
+  // 初始化 Agent Manager（使用新的配置和依赖注入）
+  const agentManager = new AgentManager(
+    {
+      storageDir: config.storage.dataDir,
+      enableSkills: true,
+      skillTimeout: 5000,
+      logSkillTriggers: true,
+    },
+    {
+      provider: provider!,
+      storage: {
+        async saveSession(sessionId, messages) {
+          await sessionStore.saveSession(sessionId, messages as any);
+        },
+        async loadSession(sessionId) {
+          const session = await sessionStore.loadSession(sessionId);
+          return session?.messages as any || null;
+        },
+      },
+    }
+  );
+
+  // 注册内置技能（使用依赖注入）
+  const skillRegistry = agentManager.getSkillRegistry();
+  const builtinSkills = getBuiltinSkills();
+  for (const skill of builtinSkills) {
+    skillRegistry.register(skill);
+  }
+  logger.info(`已注册 ${builtinSkills.length} 个内置技能`);
 
   // 创建默认 Agent
   if (provider) {
@@ -114,18 +147,22 @@ async function main() {
     logger.info("已创建默认 Agent:", defaultAgent.getConfig());
   }
 
-  // 启动 Gateway 服务器
+  // 创建 ChatService（解耦 Gateway 和 Agent）
+  const chatService = createChatService(agentManager);
+
+  // 启动 Gateway 服务器（使用 ChatService 接口 + AgentManager）
   const httpServer = new GatewayHttpServer(
-    agentManager,
+    chatService,  // 注入 ChatService 用于聊天
     config.server.port,
     config.server.host,
+    agentManager  // 注入 AgentManager 用于管理接口
   );
   await httpServer.start();
 
   const wsServer = new GatewayWsServer(
-    agentManager,
-    config.server.port,
-    config.server.host,
+    chatService,  // 注入 ChatService
+    config.server.port + 1,
+    config.server.host
   );
 
   logger.info(`✅ krebs CN 启动成功！`);
