@@ -4,7 +4,6 @@
 
 import { describe, it, expect, vi } from "vitest";
 import {
-  laneManager,
   enqueueInLane,
   enqueue,
   setConcurrency,

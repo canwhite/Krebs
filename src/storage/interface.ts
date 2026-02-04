@@ -8,6 +8,52 @@
  */
 
 import type { Message } from "@/types/index.js";
+import type { MemorySearchResult } from "./memory/index.js";
+
+/**
+ * 记忆存储接口
+ *
+ * 定义长期记忆存储和搜索的基本操作
+ */
+export interface IMemoryStorage {
+  /**
+   * 搜索记忆
+   *
+   * @param query - 搜索查询
+   * @param topK - 返回结果数量
+   * @returns 搜索结果列表
+   */
+  search(query: string, topK?: number): Promise<MemorySearchResult[]>;
+
+  /**
+   * 启动管理器
+   */
+  start(): Promise<void>;
+
+  /**
+   * 停止管理器
+   */
+  stop(): Promise<void>;
+
+  /**
+   * 同步文件（增量更新）
+   */
+  sync(): Promise<void>;
+
+  /**
+   * 全量重建索引
+   */
+  reindex(): Promise<void>;
+
+  /**
+   * 获取统计信息
+   */
+  getStats(): {
+    fileCount: number;
+    chunkCount: number;
+    totalSize: number;
+  };
+}
 
 /**
  * 会话存储接口

@@ -19,7 +19,11 @@
 **技术栈**：
 - 语言: TypeScript
 - 运行时: Node.js (Deno兼容)
-- 主要依赖: Anthropic SDK, OpenAI SDK
+- 主要依赖:
+  - Anthropic SDK, OpenAI SDK (LLM)
+  - better-sqlite3 (SQLite 数据库)
+  - sqlite-vec (向量搜索扩展)
+  - chokidar (文件监听)
 - 架构模式: 依赖注入、模块化、分层设计
 
 ---
@@ -57,7 +61,7 @@ index.ts (主入口)
 | **shared** | 配置、日志 | 外部库 |
 | **scheduler** | 并发控制队列 | 无 |
 | **provider** | AI 模型抽象 | types |
-| **storage** | 数据存储 | types |
+| **storage** | 数据存储（Markdown、Memory） | types, better-sqlite3, sqlite-vec, chokidar |
 | **agent** | 智能体核心 | provider, storage, scheduler, types |
 | **gateway** | HTTP/WebSocket 服务 | agent, types |
 
@@ -85,8 +89,15 @@ Krebs/
 │   │   ├── openai.ts    # OpenAI 实现
 │   │   └── deepseek.ts  # DeepSeek 实现
 │   ├── storage/         # 存储层
-│   │   ├── session.ts   # 会话存储
-│   │   └── store.ts     # 存储基类
+│   │   ├── markdown/    # Markdown 存储
+│   │   │   └── store.ts # MarkdownStore、SessionStore
+│   │   ├── memory/      # 记忆存储（索引 + 搜索）
+│   │   │   ├── types.ts      # 类型定义
+│   │   │   ├── internal.ts   # 工具函数
+│   │   │   ├── schema.ts     # 数据库架构
+│   │   │   ├── embeddings.ts # Embedding Provider
+│   │   │   └── manager.ts    # 核心管理器
+│   │   └── interface.ts # 存储接口
 │   ├── scheduler/       # 调度系统
 │   │   └── lanes.ts     # Lane 队列管理
 │   ├── shared/          # 共享工具
@@ -108,6 +119,93 @@ Krebs/
 ---
 
 ## 核心设计模式
+
+### 0. Memory Storage 模式（长期记忆）
+
+**设计理念**：通过 SQLite 索引 + 向量搜索实现智能的长期记忆管理
+
+**核心特性**：
+- 🗄️ **SQLite 索引**：文件级哈希校验，支持增量更新
+- 🔍 **向量搜索**：使用本地 Embedding Provider（Ollama）
+- 📝 **Markdown 长期记忆**：自动管理 `workspace/memory/` 目录
+- 🔨 **智能分块**：按 token 数分割，支持 overlap
+- 👀 **实时监听**：使用 chokidar 监听文件变化，自动更新索引
+
+**使用方式**：
+
+```typescript
+import { MemoryIndexManager, OllamaEmbeddingProvider } from "@/storage/memory/index.js";
+
+// 创建管理器
+const manager = new MemoryIndexManager({
+  dbPath: "./memory.db",
+  workspaceDir: "./workspace",
+  embeddingProvider: new OllamaEmbeddingProvider(),
+  chunkConfig: { tokens: 500, overlap: 50 },
+});
+
+// 启动（会自动索引和启动监听）
+await manager.start();
+
+// 搜索记忆
+const results = await manager.search("What is the project about?", 5);
+
+// 获取统计信息
+const stats = manager.getStats();
+console.log(`Files: ${stats.fileCount}, Chunks: ${stats.chunkCount}`);
+
+// 停止管理器
+await manager.stop();
+```
+
+**数据库结构**：
+
+```sql
+-- 文件元信息
+CREATE TABLE files (
+  path TEXT PRIMARY KEY,
+  source TEXT NOT NULL DEFAULT 'memory',
+  hash TEXT NOT NULL,
+  mtime INTEGER NOT NULL,
+  size INTEGER NOT NULL
+);
+
+-- 文本分块
+CREATE TABLE chunks (
+  id TEXT PRIMARY KEY,
+  path TEXT NOT NULL,
+  source TEXT NOT NULL DEFAULT 'memory',
+  start_line INTEGER NOT NULL,
+  end_line INTEGER NOT NULL,
+  hash TEXT NOT NULL,
+  model TEXT NOT NULL,
+  text TEXT NOT NULL,
+  embedding TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+-- Embedding 缓存
+CREATE TABLE embedding_cache (
+  provider TEXT NOT NULL,
+  model TEXT NOT NULL,
+  provider_key TEXT,
+  hash TEXT NOT NULL,
+  embedding TEXT NOT NULL,
+  dims INTEGER,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (provider, model, provider_key, hash)
+);
+```
+
+**优势**：
+- 本地化：无需依赖外部服务（使用 Ollama）
+- 高效：增量索引，只更新变更文件
+- 智能：向量搜索支持语义理解
+- 实时：文件变化自动更新索引
+
+---
+
+### 1. Provider 模式（策略模式）
 
 ### 1. Provider 模式（策略模式）
 
@@ -320,6 +418,8 @@ npm test -- logger.test.ts
 - [x] 日志标准化（已完成）
 
 ### 第三阶段（功能增强）📋 计划中
+- [x] Memory Storage 系统（SQLite 索引 + 向量搜索）
+- [ ] 向量搜索完整实现（sqlite-vec 集成）
 - [ ] 技能系统增强（支持多位置加载）
 - [ ] 技能热加载
 - [ ] 性能监控

@@ -8,14 +8,11 @@ import {
   createOpenAIProvider,
   createDeepSeekProvider,
 } from "./factory.js";
-import type { AnthropicProviderConfig } from "./anthropic.js";
-import type { OpenAIProviderConfig } from "./openai.js";
-import type { DeepSeekProviderConfig } from "./deepseek.js";
 
 describe("Provider Factory", () => {
   describe("createAnthropicProvider", () => {
     it("应该创建 Anthropic Provider", () => {
-      const config: AnthropicProviderConfig = {
+      const config = {
         apiKey: "test-key",
         baseUrl: "https://api.anthropic.com",
       };
@@ -26,7 +23,7 @@ describe("Provider Factory", () => {
     });
 
     it("应该使用默认 baseUrl", () => {
-      const config: AnthropicProviderConfig = {
+      const config = {
         apiKey: "test-key",
       };
       const provider = createAnthropicProvider(config);
@@ -38,7 +35,7 @@ describe("Provider Factory", () => {
 
   describe("createOpenAIProvider", () => {
     it("应该创建 OpenAI Provider", () => {
-      const config: OpenAIProviderConfig = {
+      const config = {
         apiKey: "test-key",
         baseUrl: "https://api.openai.com/v1",
       };
@@ -49,7 +46,7 @@ describe("Provider Factory", () => {
     });
 
     it("应该使用默认 baseUrl", () => {
-      const config: OpenAIProviderConfig = {
+      const config = {
         apiKey: "test-key",
       };
       const provider = createOpenAIProvider(config);
@@ -61,7 +58,7 @@ describe("Provider Factory", () => {
 
   describe("createDeepSeekProvider", () => {
     it("应该创建 DeepSeek Provider", () => {
-      const config: DeepSeekProviderConfig = {
+      const config = {
         apiKey: "test-key",
         baseUrl: "https://api.deepseek.com",
       };
@@ -72,7 +69,7 @@ describe("Provider Factory", () => {
     });
 
     it("应该使用默认 baseUrl", () => {
-      const config: DeepSeekProviderConfig = {
+      const config = {
         apiKey: "test-key",
       };
       const provider = createDeepSeekProvider(config);

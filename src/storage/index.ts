@@ -4,3 +4,4 @@
 
 export * from "./markdown/store.js";
 export * from "./interface.js";
+export * from "./memory/index.js";
