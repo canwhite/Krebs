@@ -1,0 +1,26 @@
+{
+  "version": "2.0",
+  "customInstructions": [
+    "遵循 'CLAUDE.md' 中的全感知任务管理模式 v2.0。",
+    "核心原则1：收到 'START:' 指令时，必须先检查是否有production.md，如果有就参考，没有就基于项目结构创建",
+    "核心原则2：收到 'START:' 指令时，检查完production.md之后，必须创建 schema/task_*.md，然后才能执行任务",
+    "初始化：启动时必须检查 'production.md'，若不存在则执行 'ls -R' 并创建之。",
+    "文档结构：任务文档必须包含：任务ID、创建时间、状态、最终目标、拆解步骤、当前进度及下一步行动。",
+    "强制刷新：每一次回复的末尾必须包含【当前快照】代码块，包含项目状态、当前任务文件、目标、已完成项和下一步。",
+    "错误恢复：若发现遗漏任务文档，必须立即停止当前工作，补齐文档后再继续。",
+    "任务结项：收到 'DONE:' 后，更新 'production.md' 并将任务文件移至 'schema/archive/'。",
+    "记忆对齐：会话重启后，优先读取 'production.md' 和最新的任务文档以恢复上下文。"
+  ],
+  "notAllowedPatterns": [
+    "在收到 'START:' 没有检查production.md就执行后续操作",
+    "在收到 'START:' 指令后未创建 'schema/task_[简码]_[YYMMDD]_[HHMMSS].md' 就开始执行代码",
+    "在收到 'START:' 指令后仅使用 TodoWrite 而忽略 Markdown 任务文档的创建",
+    "回复末尾缺少 [项目全局状态]、[当前任务文件] 等快照信息"
+  ],
+  "tasks": {
+    "initialize": {
+      "description": "初始化项目状态和全局认知",
+      "command": "ls -R && cat production.md"
+    }
+  }
+}

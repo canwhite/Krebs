@@ -1,0 +1,55 @@
+{
+  "name": "krebs",
+  "version": "1.0.0",
+  "description": "krebs CN - 精简版 AI Agent 框架",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "krebs": "dist/index.js"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "vitest",
+    "lint": "oxlint src",
+    "format": "oxfmt --write src"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "llm",
+    "framework"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
+    "@clack/prompts": "^0.11.0",
+    "@sinclair/typebox": "^0.34.47",
+    "chalk": "^5.6.2",
+    "chokidar": "^5.0.0",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "openai": "^4.83.0",
+    "proper-lockfile": "^4.1.2",
+    "tslog": "^4.10.2",
+    "ws": "^8.19.0",
+    "yaml": "^2.8.2",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.10",
+    "@types/express": "^5.0.6",
+    "@types/proper-lockfile": "^4.1.4",
+    "@types/ws": "^8.18.1",
+    "oxfmt": "0.26.0",
+    "oxlint": "^1.41.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  }
+}
