@@ -22,7 +22,7 @@ import { createChatService } from "@/gateway/service/chat-service.js";
 import { getBuiltinSkills } from "@/agent/skills/index.js";
 import { getBuiltinTools } from "@/agent/tools/index.js";
 import { CommandLane, setConcurrency } from "@/scheduler/lanes.js";
-import { SessionStore } from "@/storage/index.js";
+import { createEnhancedSessionStorage } from "@/storage/session/index.js";
 import fs from "node:fs/promises";
 
 /**
@@ -122,8 +122,13 @@ async function startServer() {
     }
   }
 
-  // 初始化存储
-  const sessionStore = new SessionStore(config.storage.dataDir);
+  // 初始化存储（使用增强版 Session Storage）
+  const sessionStorage = createEnhancedSessionStorage({
+    baseDir: config.storage.dataDir,
+    enableCache: true,
+    cacheTtl: 45000, // 45 秒
+  });
+  logger.info("已初始化 Session Storage（增强版，支持文件锁和缓存）");
 
   // 初始化 Agent Manager（使用新的配置和依赖注入）
   const agentManager = new AgentManager(
@@ -135,15 +140,7 @@ async function startServer() {
     },
     {
       provider: provider!,
-      storage: {
-        async saveSession(sessionId, messages) {
-          await sessionStore.saveSession(sessionId, messages as any);
-        },
-        async loadSession(sessionId) {
-          const session = await sessionStore.loadSession(sessionId);
-          return session?.messages as any || null;
-        },
-      },
+      storage: sessionStorage, // 直接注入 SessionStorage
     }
   );
 

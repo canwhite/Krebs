@@ -9,6 +9,7 @@
 
 import type { Message } from "@/types/index.js";
 import type { MemorySearchResult } from "./memory/index.js";
+import type { SessionEntry } from "./session/index.js";
 
 /**
  * 记忆存储接口
@@ -98,6 +99,40 @@ export interface ISessionStorage {
 }
 
 /**
+ * 增强版会话存储接口
+ *
+ * 扩展 ISessionStorage，添加元数据相关操作
+ */
+export interface IEnhancedSessionStorage extends ISessionStorage {
+  /**
+   * 更新会话元数据
+   *
+   * @param sessionId - 会话ID
+   * @param metadata - 元数据更新
+   * @returns 更新后的完整元数据，如果会话不存在返回 null
+   */
+  updateSessionMetadata(
+    sessionId: string,
+    metadata: Partial<SessionEntry>
+  ): Promise<SessionEntry | null>;
+
+  /**
+   * 加载会话（包含元数据）
+   *
+   * @param sessionId - 会话ID
+   * @returns 会话元数据和消息列表，如果不存在返回 null
+   */
+  loadSessionWithMetadata(
+    sessionId: string
+  ): Promise<{ entry: SessionEntry; messages: Message[] } | null>;
+
+  /**
+   * 获取底层 SessionStore 实例（用于高级操作）
+   */
+  getStore(): any;
+}
+
+/**
  * 通用存储接口
  *
  * 定义通用的 KV 存储操作
@@ -142,11 +177,12 @@ export interface IStorage {
 }
 
 /**
- * 存储适配器
+ * Markdown 存储适配器（旧版，兼容性保留）
  *
- * 将 SessionStore 适配为 ISessionStorage 接口
+ * 将 Markdown SessionStore 适配为 ISessionStorage 接口
+ * @deprecated 建议使用新的 session/session-adapter 中的 SessionStorageAdapter
  */
-export class SessionStorageAdapter implements ISessionStorage {
+export class MarkdownSessionStorageAdapter implements ISessionStorage {
   constructor(private store: any) {}
 
   async saveSession(
@@ -175,3 +211,6 @@ export class SessionStorageAdapter implements ISessionStorage {
     return [];
   }
 }
+
+// 向后兼容的别名
+export const SessionStorageAdapter = MarkdownSessionStorageAdapter;

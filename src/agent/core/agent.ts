@@ -75,8 +75,8 @@ export class Agent {
     // 加载历史消息
     const history = await this.loadHistory(sessionId);
 
-    // 构建初始消息
-    const messages: Message[] = [
+    // 构建初始消息（用于发送给 LLM）
+    const messagesForLLM: Message[] = [
       ...(this.config.systemPrompt
         ? [
             {
@@ -95,7 +95,7 @@ export class Agent {
     ];
 
     // Tool Calling 循环
-    let currentMessages = [...messages];
+    let currentMessages = [...messagesForLLM];
     let iteration = 0;
 
     while (iteration < this.maxIterations) {
@@ -142,9 +142,17 @@ export class Agent {
         timestamp: Date.now(),
       };
 
-      // 保存完整对话历史
-      const allMessages = [...currentMessages, finalMessage];
-      await this.saveHistory(sessionId, allMessages);
+      // 保存对话历史（不包含系统提示词）
+      const messagesToSave: Message[] = [
+        ...history,
+        {
+          role: "user",
+          content: userMessage,
+          timestamp: Date.now(),
+        },
+        finalMessage,
+      ];
+      await this.saveHistory(sessionId, messagesToSave);
 
       return {
         response: response.content || "",
@@ -183,8 +191,8 @@ export class Agent {
     // 构建 system prompt（包含 Skills）
     const systemPrompt = this.buildSystemPrompt();
 
-    // 构建上下文
-    const messages: Message[] = [
+    // 构建上下文（用于发送给 LLM）
+    const messagesForLLM: Message[] = [
       ...(systemPrompt
         ? [
             {
@@ -204,7 +212,7 @@ export class Agent {
 
     // 使用 LLM 流式生成响应
     const response = await this.deps.provider.chatStream(
-      messages,
+      messagesForLLM,
       {
         model: this.config.model ?? "claude-3-5-sonnet-20241022",
         temperature: this.config.temperature,
@@ -213,13 +221,21 @@ export class Agent {
       onChunk
     );
 
-    // 保存对话历史
-    messages.push({
-      role: "assistant",
-      content: response.content,
-      timestamp: Date.now(),
-    });
-    await this.saveHistory(sessionId, messages);
+    // 保存对话历史（不包含系统提示词）
+    const messagesToSave: Message[] = [
+      ...history,
+      {
+        role: "user",
+        content: userMessage,
+        timestamp: Date.now(),
+      },
+      {
+        role: "assistant",
+        content: response.content,
+        timestamp: Date.now(),
+      },
+    ];
+    await this.saveHistory(sessionId, messagesToSave);
 
     return {
       response: response.content,
