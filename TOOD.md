@@ -1,6 +1,10 @@
 llm provider写个抽象类，将和tool call耦合的部分写到那里
 技能描述中可以包含任何命令行工具的使用说明。未来的版本将支持自动安装依赖。
 
+# invoke api
+
+
+//web search
  curl -X POST http://localhost:3000/api/chat \
      -H "Content-Type: application/json" \
      -d '{
@@ -12,3 +16,8 @@ llm provider写个抽象类，将和tool call耦合的部分写到那里
          "sessionId": "test-006"
        }
      }'
+     
+//normal use
+curl -X POST http://localhost:3000/api/chat \
+    -H "Content-Type: application/json" \
+    -d '{"id":"test","method":"chat.send","params":{"agentId":"default","sessionId":"test","message":"你都有哪些能力呢？"}}'
