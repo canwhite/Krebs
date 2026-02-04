@@ -14,6 +14,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import Database from "better-sqlite3";
 import chokidar from "chokidar";
+import { load as loadSqliteVec } from "sqlite-vec";
 
 import type {
   IEmbeddingProvider,
@@ -73,6 +74,9 @@ export class MemoryIndexManager {
     this.db = new Database(this.dbPath);
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("synchronous = NORMAL");
+
+    // 加载 sqlite-vec 扩展
+    loadSqliteVec(this.db);
 
     // 确保数据库架构
     const schemaResult = ensureMemoryIndexSchema({
@@ -254,7 +258,7 @@ export class MemoryIndexManager {
     const content = await fs.readFile(entry.absPath, "utf-8");
     const chunks = chunkMarkdown(content, this.chunkConfig);
 
-    // 删除旧的 chunks
+    // 删除旧的 chunks 和向量索引
     this.db.prepare(`DELETE FROM chunks WHERE path = ? AND source = ?`).run(entry.path, "memory");
 
     // 插入文件记录
@@ -270,6 +274,7 @@ export class MemoryIndexManager {
       const chunkId = randomUUID();
       const embeddingJson = JSON.stringify(embeddingResult.embedding);
 
+      // 插入到 chunks 表
       this.db.prepare(`
         INSERT INTO chunks (id, path, source, start_line, end_line, hash, model, text, embedding, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -285,16 +290,78 @@ export class MemoryIndexManager {
         embeddingJson,
         Date.now(),
       );
+
+      // 插入到向量索引表（用于 sqlite-vec 搜索）
+      try {
+        this.db.prepare(`
+          INSERT OR REPLACE INTO chunks_vec (chunk_id, embedding)
+          VALUES (?, ?)
+        `).run(chunkId, embeddingJson);
+      } catch (err) {
+        // 如果向量表插入失败（如维度不匹配），记录错误但继续
+        console.warn(`Failed to insert vector for chunk ${chunkId}:`, err);
+      }
     }
   }
 
   /**
    * 向量搜索
    */
-  async search(_query: string, _topK: number = 5): Promise<MemorySearchResult[]> {
-    // TODO: 实现向量相似度搜索（需要 sqlite-vec）
-    // 这里先返回空结果
-    return [];
+  async search(query: string, topK: number = 5): Promise<MemorySearchResult[]> {
+    // 1. 检查向量表是否存在
+    const vecTableExists = this.db.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='chunks_vec'"
+    ).get() as { name: string } | undefined;
+
+    if (!vecTableExists) {
+      // 向量表不可用，返回空结果
+      console.warn("Vector table not available, returning empty results");
+      return [];
+    }
+
+    // 2. 生成查询的 embedding
+    const queryEmbedding = await this.embeddingProvider.embed(query);
+    const queryVector = JSON.stringify(queryEmbedding.embedding);
+
+    // 3. 使用 sqlite-vec 进行相似度搜索
+    try {
+      const results = this.db.prepare(`
+        SELECT
+          c.path,
+          c.start_line,
+          c.end_line,
+          c.text,
+          c.source,
+          distance
+        FROM chunks_vec
+        JOIN chunks c ON chunks_vec.chunk_id = c.id
+        WHERE embedding MATCH ?
+        ORDER BY distance
+        LIMIT ?
+      `).all(queryVector, topK) as Array<{
+        path: string;
+        start_line: number;
+        end_line: number;
+        text: string;
+        source: string;
+        distance: number;
+      }>;
+
+      // 4. 转换距离为相似度分数
+      // sqlite-vec 返回的是 L2 距离，距离越小越相似
+      // 转换为 0-1 的分数：1 / (1 + distance)
+      return results.map((r) => ({
+        path: r.path,
+        startLine: r.start_line,
+        endLine: r.end_line,
+        score: 1 / (1 + r.distance),
+        snippet: r.text,
+        source: r.source as "memory" | "sessions",
+      }));
+    } catch (error) {
+      console.error("Vector search failed:", error);
+      return [];
+    }
   }
 
   /**

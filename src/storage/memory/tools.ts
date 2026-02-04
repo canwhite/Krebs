@@ -9,9 +9,12 @@
  * 参考：openclaw-cn-ds/src/agents/tools/memory-tool.ts
  */
 
+import path from "node:path";
+import fs from "node:fs/promises";
 import type { AgentContext } from "@/types/index.js";
 import type { SkillResult } from "@/agent/skills/base.js";
 import type { MemoryService } from "../memory/service.js";
+import { ensureDir } from "./internal.js";
 
 /**
  * 创建记忆搜索工具
@@ -86,7 +89,7 @@ export function createMemorySearchTool(memoryService: MemoryService) {
 /**
  * 创建记忆保存工具
  */
-export function createMemorySaveTool(_memoryService: MemoryService) {
+export function createMemorySaveTool(memoryService: MemoryService) {
   return {
     name: "memory_save",
     description:
@@ -128,22 +131,91 @@ export function createMemorySaveTool(_memoryService: MemoryService) {
       const title = args?.title;
       const tags = args?.tags;
 
-      // TODO: 实现保存逻辑
-      // 1. 确定保存文件（MEMORY.md 或每日日志）
-      // 2. 格式化内容
-      // 3. 追加到文件
-      // 4. 触发索引更新
+      // 1. 确定 dataDir（从 MemoryService 获取）
+      // 注意：需要从 memoryService 获取 workspaceDir
+      // 由于 MemoryService 没有暴露 getter，我们使用另一种方式
 
-      return {
-        success: true,
-        data: {
-          message: "记忆已保存（TODO）",
-          title,
-          tags,
-        },
-      };
+      // 2. 格式化内容
+      const formattedContent = formatMemoryEntry(content, title, tags);
+
+      // 3. 追加到 MEMORY.md 文件
+      try {
+        // 直接追加到主 MEMORY.md 文件
+        // 使用 timestamp 作为分隔符
+        await appendToMemoryFile(formattedContent);
+
+        // 4. 触发索引更新
+        await memoryService.syncIndex();
+
+        return {
+          success: true,
+          data: {
+            message: "记忆已保存到 MEMORY.md",
+            title,
+            tags,
+          },
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: `保存失败: ${error instanceof Error ? error.message : String(error)}`,
+        };
+      }
     },
   };
+}
+
+/**
+ * 格式化记忆条目
+ */
+function formatMemoryEntry(
+  content: string,
+  title?: string,
+  tags?: string[]
+): string {
+  const timestamp = new Date().toISOString();
+  const lines: string[] = [];
+
+  // 分隔线
+  lines.push("---");
+  lines.push("");
+
+  // 标题（如果有）
+  if (title) {
+    lines.push(`### ${title}`);
+    lines.push("");
+  }
+
+  // 标签（如果有）
+  if (tags && tags.length > 0) {
+    lines.push(`**Tags**: ${tags.map((t) => `\`${t}\``).join(", ")}`);
+    lines.push("");
+  }
+
+  // 时间戳
+  lines.push(`**Date**: ${timestamp}`);
+  lines.push("");
+
+  // 内容
+  lines.push(content);
+
+  return lines.join("\n");
+}
+
+/**
+ * 追加到 MEMORY.md 文件
+ */
+async function appendToMemoryFile(content: string): Promise<void> {
+  // 获取 workspace 路径
+  // 这里我们假设当前工作目录就是项目根目录
+  const workspaceDir = process.cwd();
+  const memoryFile = path.join(workspaceDir, "MEMORY.md");
+
+  // 确保文件存在
+  ensureDir(workspaceDir);
+
+  // 追加内容
+  await fs.appendFile(memoryFile, content + "\n\n", "utf-8");
 }
 
 /**

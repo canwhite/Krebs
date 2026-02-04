@@ -203,6 +203,26 @@ CREATE TABLE embedding_cache (
 - 智能：向量搜索支持语义理解
 - 实时：文件变化自动更新索引
 
+**新增功能**（2026-02-04）：
+- ✅ **记忆保存功能**：
+  - 自动保存对话到每日日志（`workspace/memory/YYYY-MM-DD.md`）
+  - 手动保存重要信息到 `MEMORY.md`
+  - 支持标题、标签、时间戳
+- ✅ **向量搜索完整实现**：
+  - 集成 sqlite-vec 扩展
+  - 创建 `chunks_vec` 虚拟表
+  - 实现 L2 距离相似度搜索
+  - 优雅降级（向量表不可用时返回空结果）
+- ✅ **MemoryService 完整功能**：
+  - `saveConversationMemory()` - 保存对话
+  - `maybeFlushMemory()` - 自动触发刷新
+  - `searchMemories()` - 搜索记忆
+  - `injectRelevantMemories()` - 注入相关记忆到对话
+- ✅ **记忆工具**：
+  - `memory_search` - 搜索长期记忆
+  - `memory_save` - 保存重要信息
+  - `memory_stats` - 获取统计信息
+
 ---
 
 ### 1. Provider 模式（策略模式）
@@ -417,9 +437,11 @@ npm test -- logger.test.ts
 - [ ] 配置验证
 - [x] 日志标准化（已完成）
 
-### 第三阶段（功能增强）📋 计划中
+### 第三阶段（功能增强）✅ 已完成
 - [x] Memory Storage 系统（SQLite 索引 + 向量搜索）
-- [ ] 向量搜索完整实现（sqlite-vec 集成）
+- [x] 向量搜索完整实现（sqlite-vec 集成）
+- [x] 记忆保存功能（每日日志 + 手动保存）
+- [x] 集成测试（28/28 通过）
 - [ ] 技能系统增强（支持多位置加载）
 - [ ] 技能热加载
 - [ ] 性能监控

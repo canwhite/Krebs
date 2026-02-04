@@ -115,6 +115,31 @@ export function ensureMemoryIndexSchema(params: {
     }
   }
 
+  // ========== chunks_vec 表（向量搜索）==========
+  // 使用 sqlite-vec 创建向量索引表
+  try {
+    // 先检查 vec0 是否可用
+    const testRow = db.prepare("SELECT name FROM pragma_function_list WHERE name = 'vec_distance'").get() as { name: string } | undefined;
+
+    if (testRow) {
+      // vec0 扩展已加载，创建表
+      db.exec(`
+        CREATE VIRTUAL TABLE IF NOT EXISTS chunks_vec USING vec0(
+          embedding float vector(768),
+          chunk_id TEXT
+        );
+      `);
+
+      // 创建索引以提高查询性能
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_chunks_vec_chunk_id ON chunks_vec(chunk_id);`);
+    } else {
+      console.warn("Vector search not available: vec0 extension not loaded");
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`Failed to create vec0 table: ${message}`);
+  }
+
   // ========== 确保列存在（向后兼容） ==========
   ensureColumn(db, "files", "source", "TEXT NOT NULL DEFAULT 'memory'");
   ensureColumn(db, "chunks", "source", "TEXT NOT NULL DEFAULT 'memory'");

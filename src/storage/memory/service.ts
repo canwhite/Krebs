@@ -10,9 +10,11 @@
  */
 
 import path from "node:path";
+import fs from "node:fs/promises";
 import { MemoryIndexManager, OllamaEmbeddingProvider } from "./index.js";
 import type { IEmbeddingProvider } from "./types.js";
 import type { Message } from "@/types/index.js";
+import { ensureDir } from "./internal.js";
 
 export interface MemoryServiceConfig {
   dataDir: string;
@@ -165,9 +167,25 @@ export class MemoryService {
       return;
     }
 
-    // 使用 MarkdownStore 保存
-    // TODO: 实现保存逻辑
-    console.log(`[Memory Service] TODO: 保存 ${messages.length} 条消息到记忆`);
+    if (messages.length === 0) {
+      return;
+    }
+
+    // 创建 memory 目录
+    const memoryDir = path.join(this.workspaceDir, "memory");
+    ensureDir(memoryDir);
+
+    // 生成每日日志文件名
+    const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+    const logFile = path.join(memoryDir, `${today}.md`);
+
+    // 格式化对话内容
+    const content = this.formatConversation(messages);
+
+    // 追加到文件
+    await fs.appendFile(logFile, content + "\n\n", "utf-8");
+
+    console.log(`[Memory Service] 已保存 ${messages.length} 条消息到 ${logFile}`);
   }
 
   /**
@@ -192,8 +210,11 @@ export class MemoryService {
       return;
     }
 
-    // TODO: 提取重要内容并保存
-    console.log(`[Memory Service] TODO: 触发记忆刷新，当前 tokens: ${currentTokens}`);
+    // 触发索引更新（确保新内容被索引）
+    if (this.manager) {
+      await this.manager.sync();
+      console.log(`[Memory Service] 已触发记忆刷新，当前 tokens: ${currentTokens}`);
+    }
   }
 
   /**
@@ -236,6 +257,36 @@ export class MemoryService {
     });
 
     return parts.join("\n\n---\n\n");
+  }
+
+  /**
+   * 格式化对话为 Markdown
+   */
+  private formatConversation(messages: Message[]): string {
+    const timestamp = new Date().toISOString();
+    const lines: string[] = [];
+
+    lines.push(`## Conversation Log - ${timestamp}`);
+    lines.push("");
+
+    for (const msg of messages) {
+      const role = msg.role.toUpperCase();
+      const content = msg.content;
+
+      // 处理多行内容
+      const contentLines = content.split("\n");
+      if (contentLines.length === 1) {
+        lines.push(`**${role}**: ${content}`);
+      } else {
+        lines.push(`**${role}**:`);
+        for (const line of contentLines) {
+          lines.push(`> ${line}`);
+        }
+      }
+      lines.push("");
+    }
+
+    return lines.join("\n");
   }
 
   /**
