@@ -162,21 +162,21 @@ interface ISessionStorage {
 
 ### 安装依赖
 
-\`\`\`bash
+```bash
 npm install
-\`\`\`
+```
 
 ### 配置环境变量
 
 复制 `.env.example` 到 `.env` 并配置：
 
-\`\`\`bash
+```bash
 cp .env.example .env
-\`\`\`
+```
 
 必需的配置：
 
-\`\`\`env
+```env
 
 # 默认使用 DeepSeek（推荐）
 
@@ -186,7 +186,7 @@ DEEPSEEK_API_KEY=your_deepseek_key
 
 ANTHROPIC_API_KEY=your_anthropic_key
 OPENAI_API_KEY=your_openai_key
-\`\`\`
+```
 
 **DeepSeek 获取 API Key：**
 
@@ -196,13 +196,13 @@ OPENAI_API_KEY=your_openai_key
 
 ### 启动服务
 
-\`\`\`bash
+```bash
 npm run dev
-\`\`\`
+```
 
 **输出**：
 
-\`\`\`
+```
 ██████╗██╗ ██╗██████╗ ███████╗██████╗
 ██╔════╝██║ ██║██╔══██╗██╔════╝██╔══██╗
 ██║ ██║ ██║██║ ██║█████╗ ██████╔╝
@@ -214,13 +214,13 @@ npm run dev
 ✅ krebs CN 启动成功！
 HTTP: http://localhost:3000
 WebSocket: ws://localhost:3001
-\`\`\`
+```
 
 ### 构建
 
-\`\`\`bash
+```bash
 npm run build
-\`\`\`
+```
 
 ---
 
@@ -230,15 +230,15 @@ Krebs 提供了完整的命令行界面（CLI），用于管理 Skills 和查看
 
 ### 基本用法
 
-\`\`\`bash
+```bash
 krebs <命令> [选项]
-\`\`\`
+```
 
 ### 可用命令
 
 #### 帮助命令
 
-\`\`\`bash
+```bash
 krebs help           # 显示帮助信息
 krebs --help         # 同上
 krebs -h             # 同上
@@ -246,11 +246,11 @@ krebs -h             # 同上
 krebs version        # 显示版本信息
 krebs --version      # 同上
 krebs -v             # 同上
-\`\`\`
+```
 
 #### Skills 命令
 
-\`\`\`bash
+```bash
 # 列出所有技能
 krebs skills list
 
@@ -274,11 +274,11 @@ krebs skills install <技能名> --dry-run
 
 # 强制重新安装
 krebs skills install <技能名> --force
-\`\`\`
+```
 
 ### 命令示例
 
-\`\`\`bash
+```bash
 # 查看 test-install 技能的状态
 krebs skills status test-install
 
@@ -293,7 +293,7 @@ krebs skills install --all
 
 # 查看所有有安装规范的技能
 krebs skills list --install
-\`\`\`
+```
 
 ### 命令选项说明
 
@@ -315,7 +315,7 @@ Krebs 支持自动安装 Skill 依赖的功能。当 Skill 的 frontmatter 中�
 
 #### 1. Node.js 包
 
-\`\`\`yaml
+```yaml
 ---
 install:
   - kind: node
@@ -324,24 +324,24 @@ install:
     bins:
       - prettyping
 ---
-\`\`\`
+```
 
 支持的包管理器（自动检测）：npm、pnpm、yarn、bun
 
 #### 2. Homebrew Formula
 
-\`\`\`yaml
+```yaml
 ---
 install:
   - kind: brew
     formula: ffmpeg
     label: "FFmpeg 多媒体处理工具"
 ---
-\`\`\`
+```
 
 #### 3. Go 模块
 
-\`\`\`yaml
+```yaml
 ---
 install:
   - kind: go
@@ -350,11 +350,11 @@ install:
     bins:
       - golangci-lint
 ---
-\`\`\`
+```
 
 #### 4. Python 包 🆕
 
-\`\`\`yaml
+```yaml
 ---
 install:
   - kind: python
@@ -364,13 +364,13 @@ install:
     bins:
       - black
 ---
-\`\`\`
+```
 
 支持的包管理器（自动检测或手动指定）：pip、pipx、poetry、uv
 
 #### 5. Ruby Gem 🆕
 
-\`\`\`yaml
+```yaml
 ---
 install:
   - kind: ruby
@@ -379,11 +379,11 @@ install:
     bins:
       - jekyll
 ---
-\`\`\`
+```
 
 #### 6. Cargo/Rust Crate 🆕
 
-\`\`\`yaml
+```yaml
 ---
 install:
   - kind: cargo
@@ -392,11 +392,11 @@ install:
     bins:
       - rg
 ---
-\`\`\`
+```
 
 #### 7. 下载文件
 
-\`\`\`yaml
+```yaml
 ---
 install:
   - kind: download
@@ -408,11 +408,11 @@ install:
     bins:
       - tool
 ---
-\`\`\`
+```
 
 ### Install Spec 字段说明
 
-\`\`\`typescript
+```typescript
 interface SkillInstallSpec {
   // 安装类型
   kind: "node" | "brew" | "go" | "uv" | "download" | "python" | "ruby" | "cargo";
@@ -444,7 +444,7 @@ interface SkillInstallSpec {
   cratePackage?: string;    // cargo: crate 包名
   url?: string;             // download: 下载 URL
 }
-\`\`\`
+```
 
 ### 安装机制
 
@@ -455,7 +455,7 @@ interface SkillInstallSpec {
 
 ### 示例 Skill
 
-\`\`\`markdown
+```markdown
 ---
 name: VideoProcessor
 description: "视频处理技能"
@@ -482,10 +482,10 @@ install:
 
 ## 使用方法
 
-\`\`\`typescript
+```typescript
 await agent.process("处理这个视频文件");
-\`\`\`
-\`\`\`
+```
+```
 
 ---
 
@@ -493,7 +493,7 @@ await agent.process("处理这个视频文件");
 
 ### 发送聊天消息
 
-\`\`\`bash
+```bash
 curl -X POST http://localhost:3000/api/chat \\
 -H "Content-Type: application/json" \\
 -d '{
@@ -505,11 +505,11 @@ curl -X POST http://localhost:3000/api/chat \\
 "message": "你好！"
 }
 }'
-\`\`\`
+```
 
 **响应**：
 
-\`\`\`json
+```json
 {
 "id": "test-001",
 "result": {
@@ -521,11 +521,11 @@ curl -X POST http://localhost:3000/api/chat \\
 }
 }
 }
-\`\`\`
+```
 
 ### WebSocket 流式响应
 
-\`\`\`javascript
+```javascript
 const ws = new WebSocket("ws://localhost:3001");
 
 ws.onopen = () => {
@@ -550,7 +550,7 @@ console.log("Chunk:", data.data.chunk);
 console.log("Complete!");
 }
 };
-\`\`\`
+```
 
 ---
 
@@ -649,27 +649,27 @@ krebs/
 
 ### DeepSeek（默认）
 
-\`\`\`typescript
+```typescript
 "deepseek-chat" // 通用对话模型
 "deepseek-coder" // 代码专用模型
-\`\`\`
+```
 
 ### Anthropic Claude
 
-\`\`\`typescript
+```typescript
 "claude-3-5-sonnet-20241022"
 "claude-3-5-haiku-20241022"
 "claude-3-opus-20240229"
-\`\`\`
+```
 
 ### OpenAI GPT
 
-\`\`\`typescript
+```typescript
 "gpt-4o"
 "gpt-4o-mini"
 "gpt-4-turbo"
 "gpt-3.5-turbo"
-\`\`\`
+```
 
 ---
 
@@ -677,28 +677,28 @@ krebs/
 
 ### 运行开发模式
 
-\`\`\`bash
+```bash
 npm run dev
-\`\`\`
+```
 
 ### 构建项目
 
-\`\`\`bash
+```bash
 npm run build
-\`\`\`
+```
 
 ### 运行测试
 
-\`\`\`bash
+```bash
 npm test
-\`\`\`
+```
 
 ### 代码检查
 
-\`\`\`bash
+```bash
 npm run lint # ESLint 检查
 npm run format # Prettier 格式化
-\`\`\`
+```
 
 ---
 
