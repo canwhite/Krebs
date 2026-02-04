@@ -16,8 +16,11 @@ import type {
   AgentContext,
   AgentResult,
 } from "@/types/index.js";
+import { createLogger } from "../../shared/logger.js";
 import type { Agent } from "./agent.js";
 import type { Skill, SkillRegistry } from "../skills/index.js";
+
+const log = createLogger("Orchestrator");
 
 /**
  * Orchestrator 配置
@@ -131,11 +134,9 @@ export class AgentOrchestrator {
 
     // 2. 记录日志
     if (this.config.logSkillTriggers !== false) {
-      console.log(
-        `[Orchestrator] Triggered skills: ${triggeredSkills
-          .map((s: Skill) => s.name)
-          .join(", ")}`
-      );
+      log.info(`Triggered skills: ${triggeredSkills
+        .map((s: Skill) => s.name)
+        .join(", ")}`);
     }
 
     // 3. 按顺序执行技能，直到有一个成功
@@ -149,9 +150,7 @@ export class AgentOrchestrator {
 
         if (result.success && result.response) {
           if (this.config.logSkillTriggers !== false) {
-            console.log(
-              `[Orchestrator] Skill "${skill.name}" executed successfully`
-            );
+            log.info(`Skill "${skill.name}" executed successfully`);
           }
 
           return {
@@ -162,10 +161,7 @@ export class AgentOrchestrator {
         }
       } catch (error) {
         // 技能执行失败，继续尝试下一个技能
-        console.error(
-          `[Orchestrator] Skill "${skill.name}" failed:`,
-          error
-        );
+        log.error(`Skill "${skill.name}" failed:`, error);
         continue;
       }
     }

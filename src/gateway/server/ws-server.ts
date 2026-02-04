@@ -7,6 +7,7 @@
  */
 
 import { WebSocketServer, WebSocket } from "ws";
+import { createLogger } from "../../shared/logger.js";
 import type { IChatService } from "../service/chat-service.js";
 import type {
   RequestFrame,
@@ -14,6 +15,8 @@ import type {
   ChatSendParams,
   ChatChunkEvent,
 } from "../protocol/frames.js";
+
+const log = createLogger("Gateway:WS");
 
 export class GatewayWsServer {
   private readonly wss: WebSocketServer;
@@ -42,19 +45,19 @@ export class GatewayWsServer {
   private setupHandlers(): void {
     this.wss.on("connection", (ws, req) => {
       const clientId = this.generateClientId();
-      console.log(`[WS] Client connected: ${clientId} from ${req.socket.remoteAddress}`);
+      log.info(`Client connected: ${clientId} from ${req.socket.remoteAddress}`);
 
       ws.on("message", async (data: Buffer) => {
         try {
           const frame: RequestFrame = JSON.parse(data.toString());
-          console.log(`[WS] ${clientId} -> ${frame.method}`);
+          log.debug(`${clientId} -> ${frame.method}`);
 
           const response = await this.handleRequest(frame, ws);
           if (response) {
             ws.send(JSON.stringify(response));
           }
         } catch (error) {
-          console.error(`[WS] ${clientId} error:`, error);
+          log.error(`${clientId} error:`, error);
           ws.send(
             JSON.stringify({
               id: "",
@@ -68,11 +71,11 @@ export class GatewayWsServer {
       });
 
       ws.on("close", () => {
-        console.log(`[WS] Client disconnected: ${clientId}`);
+        log.debug(`Client disconnected: ${clientId}`);
       });
 
       ws.on("error", (error) => {
-        console.error(`[WS] ${clientId} socket error:`, error);
+        log.error(`${clientId} socket error:`, error);
       });
 
       // 发送欢迎消息
@@ -84,7 +87,7 @@ export class GatewayWsServer {
       );
     });
 
-    console.log(`[Gateway] WebSocket server listening on ws://${this.host}:${this.port + 1}`);
+    log.info(`WebSocket server listening on ws://${this.host}:${this.port}`);
   }
 
   private async handleRequest(
@@ -201,9 +204,9 @@ export class GatewayWsServer {
     return new Promise((resolve) => {
       this.wss.close((err) => {
         if (err) {
-          console.error("[Gateway] WebSocket close error:", err);
+          log.error("WebSocket close error:", err);
         }
-        console.log("[Gateway] WebSocket server stopped");
+        log.info("WebSocket server stopped");
         resolve();
       });
     });

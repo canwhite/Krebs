@@ -3,6 +3,10 @@
  * 参考 krebs-ds 的设计，实现命令队列和并发控制
  */
 
+import { createLogger } from "../shared/logger.js";
+
+const log = createLogger("Lane");
+
 export enum CommandLane {
   Main = "main",
   Cron = "cron",
@@ -62,9 +66,7 @@ class LaneManager {
         const waitedMs = Date.now() - entry.enqueuedAt;
 
         if (waitedMs >= entry.warnAfterMs) {
-          console.warn(
-            `[Lane:${lane}] Wait exceeded: ${waitedMs}ms, queued: ${state.queue.length}`,
-          );
+          log.warn(`[${lane}] Wait exceeded: ${waitedMs}ms, queued: ${state.queue.length}`);
         }
 
         state.active += 1;
@@ -73,16 +75,12 @@ class LaneManager {
           try {
             const result = await entry.task();
             state.active -= 1;
-            console.debug(
-              `[Lane:${lane}] Task done: ${Date.now() - startTime}ms, active: ${state.active}, queued: ${state.queue.length}`,
-            );
+            log.debug(`[${lane}] Task done: ${Date.now() - startTime}ms, active: ${state.active}, queued: ${state.queue.length}`);
             pump();
             entry.resolve(result);
           } catch (err) {
             state.active -= 1;
-            console.error(
-              `[Lane:${lane}] Task error: ${Date.now() - startTime}ms, error: ${String(err)}`,
-            );
+            log.error(`[${lane}] Task error: ${Date.now() - startTime}ms, error: ${String(err)}`);
             pump();
             entry.reject(err);
           }
@@ -113,9 +111,7 @@ class LaneManager {
         enqueuedAt: Date.now(),
         warnAfterMs,
       });
-      console.debug(
-        `[Lane:${cleaned}] Enqueued: ${state.queue.length + state.active}`,
-      );
+      log.debug(`[${cleaned}] Enqueued: ${state.queue.length + state.active}`);
       this.drainLane(cleaned);
     });
   }

@@ -8,6 +8,7 @@
  */
 
 import express from "express";
+import { createLogger } from "../../shared/logger.js";
 import type { AgentManager } from "@/agent/core/index.js";
 import type { IChatService } from "../service/chat-service.js";
 import type {
@@ -17,6 +18,8 @@ import type {
   AgentCreateParams,
   SessionListParams,
 } from "../protocol/frames.js";
+
+const log = createLogger("Gateway:HTTP");
 
 export class GatewayHttpServer {
   private readonly app: express.Application;
@@ -56,7 +59,7 @@ export class GatewayHttpServer {
 
     // 日志
     this.app.use((req, _, next) => {
-      console.log(`[HTTP] ${req.method} ${req.path}`);
+      log.info(`${req.method} ${req.path}`);
       next();
     });
   }
@@ -74,7 +77,7 @@ export class GatewayHttpServer {
         const response = await this.handleChatSend(frame.params!);
         res.json(this.successResponse(frame.id, response));
       } catch (error) {
-        console.error("[HTTP] Chat error:", error);
+        log.error("Chat error:", error);
         res.json(
           this.errorResponse(req.body?.id ?? "", {
             code: -1,
@@ -91,7 +94,7 @@ export class GatewayHttpServer {
         const response = await this.handleAgentCreate(frame.params!);
         res.json(this.successResponse(frame.id, response));
       } catch (error) {
-        console.error("[HTTP] Agent create error:", error);
+        log.error("Agent create error:", error);
         res.json(
           this.errorResponse(req.body?.id ?? "", {
             code: -1,
@@ -106,7 +109,7 @@ export class GatewayHttpServer {
         const response = await this.handleAgentList();
         res.json(this.successResponse("", response));
       } catch (error) {
-        console.error("[HTTP] Agent list error:", error);
+        log.error("Agent list error:", error);
         res.json(
           this.errorResponse("", {
             code: -1,
@@ -125,7 +128,7 @@ export class GatewayHttpServer {
         const response = await this.handleSessionList(params);
         res.json(this.successResponse("", response));
       } catch (error) {
-        console.error("[HTTP] Session list error:", error);
+        log.error("Session list error:", error);
         res.json(
           this.errorResponse("", {
             code: -1,
@@ -209,7 +212,7 @@ export class GatewayHttpServer {
   async start(): Promise<void> {
     return new Promise((resolve) => {
       this.app.listen(this.port, this.host, () => {
-        console.log(`[Gateway] HTTP server listening on http://${this.host}:${this.port}`);
+        log.info(`HTTP server listening on http://${this.host}:${this.port}`);
         resolve();
       });
     });
@@ -220,6 +223,6 @@ export class GatewayHttpServer {
    */
   async stop(): Promise<void> {
     // Express 不提供直接的关闭方法，这里简化处理
-    console.log("[Gateway] HTTP server stopped");
+    log.info("HTTP server stopped");
   }
 }

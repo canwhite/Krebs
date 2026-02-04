@@ -2,8 +2,11 @@
  * 内置工具实现
  */
 
+import { createLogger } from "../../shared/logger.js";
 import type { Tool } from "./base.js";
 import { globalToolRegistry } from "./base.js";
+
+const log = createLogger("Tool:FileWrite");
 
 /**
  * 文件读取工具
@@ -58,7 +61,7 @@ export const fileWriteTool: Tool = {
       const path = params.path as string;
       const fileContent = params.content as string;
       // 这里简化实现，实际应该使用 fs 模块
-      console.log(`[file_write] Writing to ${path}, size: ${fileContent.length}`);
+      log.debug(`Writing to ${path}, size: ${fileContent.length}`);
       return {
         success: true,
       };
