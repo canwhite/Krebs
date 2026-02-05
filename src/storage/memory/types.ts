@@ -119,3 +119,113 @@ export interface IndexProgressCallback {
     label?: string;
   }): void;
 }
+
+/**
+ * Memory Storage 配置选项
+ *
+ * 参考：openclaw-cn-ds/src/config/types.tools.ts
+ */
+export interface MemoryStorageConfig {
+  /**
+   * 是否启用记忆搜索
+   * @default true
+   */
+  enabled?: boolean;
+
+  /**
+   * 数据源配置
+   * @default ["memory"]
+   */
+  sources?: Array<"memory" | "sessions">;
+
+  /**
+   * 实验性功能
+   */
+  experimental?: {
+    /**
+     * 会话记忆（实验性）
+     * @default false
+     */
+    sessionMemory?: boolean;
+  };
+
+  /**
+   * 同步配置
+   */
+  sync?: {
+    /**
+     * 会话启动时同步
+     * @default true
+     */
+    onSessionStart?: boolean;
+
+    /**
+     * 搜索前自动同步
+     * @default true
+     */
+    onSearch?: boolean;
+
+    /**
+     * 监控文件变化
+     * @default true
+     */
+    watch?: boolean;
+
+    /**
+     * 文件变化防抖时间（毫秒）
+     * @default 5000
+     */
+    watchDebounceMs?: number;
+
+    /**
+     * 定期同步间隔（分钟）
+     * @default undefined（不启用）
+     */
+    intervalMinutes?: number;
+
+    /**
+     * 同步原因（用于调试）
+     */
+    reason?: "startup" | "search" | "session-start" | "watch" | "interval";
+  };
+
+  /**
+   * 查询配置
+   */
+  query?: {
+    /**
+     * 最大结果数
+     * @default 5
+     */
+    maxResults?: number;
+
+    /**
+     * 最低分数阈值（0-1）
+     * @default 0.0
+     */
+    minScore?: number;
+
+    /**
+     * 混合搜索配置
+     */
+    hybrid?: {
+      /**
+       * 是否启用混合搜索
+       * @default false
+       */
+      enabled?: boolean;
+
+      /**
+       * 向量搜索权重（0-1）
+       * @default 0.7
+       */
+      vectorWeight?: number;
+
+      /**
+       * 关键词搜索权重（0-1）
+       * @default 0.3
+       */
+      textWeight?: number;
+    };
+  };
+}

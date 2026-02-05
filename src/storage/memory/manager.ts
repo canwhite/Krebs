@@ -22,6 +22,7 @@ import type {
   MemorySearchResult,
   ChunkConfig,
   IndexProgressCallback,
+  MemoryStorageConfig,
 } from "./types.js";
 import {
   chunkMarkdown,
@@ -49,18 +50,23 @@ export class MemoryIndexManager {
   /**
    * 配置选项
    */
-  private readonly options = {
-    ftsEnabled: true, // 全文搜索
-    watchEnabled: true, // 实时监听
-    watchDebounceMs: 5000, // 监听去抖（5秒）
-    embeddingCache: true, // Embedding 缓存
-  };
+  private readonly options: MemoryStorageConfig = {};
+
+  /**
+   * 内部状态
+   */
+  private dirty = false; // 文件是否变化，需要同步
+  private sessionsDirty = false; // 会话是否变化
+  private syncInProgress = false; // 同步是否正在进行
+  private sessionWarm = new Set<string>(); // 已预热的会话
+  private intervalSyncTimer?: NodeJS.Timeout; // 定期同步定时器
 
   constructor(params: {
     dbPath: string;
     workspaceDir: string;
     embeddingProvider: IEmbeddingProvider;
     chunkConfig?: ChunkConfig;
+    config?: MemoryStorageConfig;
   }) {
     this.dbPath = params.dbPath;
     this.workspaceDir = params.workspaceDir;
@@ -69,6 +75,7 @@ export class MemoryIndexManager {
       tokens: 500,
       overlap: 50,
     };
+    this.options = params.config || {};
 
     // 初始化数据库
     this.db = new Database(this.dbPath);
@@ -83,7 +90,7 @@ export class MemoryIndexManager {
       db: this.db,
       embeddingCacheTable: EMBEDDING_CACHE_TABLE,
       ftsTable: FTS_TABLE,
-      ftsEnabled: this.options.ftsEnabled,
+      ftsEnabled: true, // FTS 默认启用
     });
 
     if (!schemaResult.ftsAvailable) {
@@ -100,11 +107,18 @@ export class MemoryIndexManager {
     }
 
     // 初始同步
-    await this.sync();
+    await this.sync({ reason: "startup" });
 
     // 启动文件监听
-    if (this.options.watchEnabled) {
+    const watchEnabled = this.options.sync?.watch ?? true;
+    if (watchEnabled) {
       this.enableWatch();
+    }
+
+    // 启动定期同步
+    const intervalMinutes = this.options.sync?.intervalMinutes;
+    if (intervalMinutes && intervalMinutes > 0) {
+      this.startIntervalSync(intervalMinutes);
     }
   }
 
@@ -126,6 +140,12 @@ export class MemoryIndexManager {
       this.watchDebounceTimer = null;
     }
 
+    // 清除定期同步定时器
+    if (this.intervalSyncTimer) {
+      clearInterval(this.intervalSyncTimer);
+      this.intervalSyncTimer = undefined;
+    }
+
     // 关闭数据库
     this.db.close();
   }
@@ -142,15 +162,26 @@ export class MemoryIndexManager {
 
     const pathsToWatch = [memoryDir, memoryFile, altMemoryFile];
 
+    const watchDebounceMs = this.options.sync?.watchDebounceMs ?? 5000;
+
     this.watcher = chokidar.watch(pathsToWatch, {
       ignoreInitial: true,
       persistent: true,
+      awaitWriteFinish: {
+        stabilityThreshold: 100, // 文件稳定 100ms 后触发
+        pollInterval: 50, // 每 50ms 轮询一次
+      },
     });
 
+    const markDirty = () => {
+      this.dirty = true;
+      this.scheduleSync();
+    };
+
     this.watcher
-      .on("add", () => this.scheduleSync())
-      .on("change", () => this.scheduleSync())
-      .on("unlink", () => this.scheduleSync());
+      .on("add", markDirty)
+      .on("change", markDirty)
+      .on("unlink", markDirty);
   }
 
   /**
@@ -176,21 +207,78 @@ export class MemoryIndexManager {
       clearTimeout(this.watchDebounceTimer);
     }
 
+    const watchDebounceMs = this.options.sync?.watchDebounceMs ?? 5000;
+
     this.watchDebounceTimer = setTimeout(() => {
-      this.sync().catch((err) => {
-        console.error("Sync failed:", err);
+      this.sync({ reason: "watch" }).catch((err) => {
+        console.error("Sync failed (watch):", err);
       });
-    }, this.options.watchDebounceMs);
+    }, watchDebounceMs);
+  }
+
+  /**
+   * 启动定期同步
+   */
+  private startIntervalSync(intervalMinutes: number): void {
+    const intervalMs = intervalMinutes * 60 * 1000;
+
+    this.intervalSyncTimer = setInterval(() => {
+      this.sync({ reason: "interval" }).catch((err) => {
+        console.error("Sync failed (interval):", err);
+      });
+    }, intervalMs);
+  }
+
+  /**
+   * 会话启动预热
+   *
+   * @param sessionKey - 会话 key
+   */
+  async warmSession(sessionKey?: string): Promise<void> {
+    const onSessionStart = this.options.sync?.onSessionStart ?? true;
+    if (!onSessionStart) return;
+
+    const key = sessionKey?.trim() || "";
+    if (key && this.sessionWarm.has(key)) return;
+
+    await this.sync({ reason: "session-start" }).catch((err) => {
+      console.error("Sync failed (session-start):", err);
+    });
+
+    if (key) this.sessionWarm.add(key);
   }
 
   /**
    * 同步文件（增量更新）
    */
-  async sync(progress?: IndexProgressCallback): Promise<void> {
-    const files = await listMemoryFiles(this.workspaceDir);
-    const fileEntries = await Promise.all(
-      files.map(async (file) => buildFileEntry(file, this.workspaceDir)),
-    );
+  async sync(
+    progressOrReason?: IndexProgressCallback | { reason?: string },
+  ): Promise<void> {
+    // 避免并发同步
+    if (this.syncInProgress) {
+      console.debug("Sync already in progress, skipping");
+      return;
+    }
+
+    this.syncInProgress = true;
+
+    try {
+      const progress =
+        typeof progressOrReason === "function"
+          ? progressOrReason
+          : undefined;
+
+      const reason =
+        typeof progressOrReason === "object" ? progressOrReason.reason : undefined;
+
+      if (reason) {
+        console.debug(`Memory sync triggered by: ${reason}`);
+      }
+
+      const files = await listMemoryFiles(this.workspaceDir);
+      const fileEntries = await Promise.all(
+        files.map(async (file) => buildFileEntry(file, this.workspaceDir)),
+      );
 
     console.debug(`Memory sync: ${fileEntries.length} files`);
 
@@ -249,6 +337,12 @@ export class MemoryIndexManager {
       // 删除 files 记录
       this.db.prepare(`DELETE FROM files WHERE path = ? AND source = ?`).run(stale.path, "memory");
     }
+
+    // 清除 dirty 标志
+    this.dirty = false;
+  } finally {
+    this.syncInProgress = false;
+  }
   }
 
   /**
@@ -305,25 +399,84 @@ export class MemoryIndexManager {
   }
 
   /**
+   * 搜索记忆
+   *
+   * @param query - 查询文本
+   * @param opts - 搜索选项
+   * @returns 搜索结果
+   */
+  async search(
+    query: string,
+    opts?: {
+      maxResults?: number;
+      minScore?: number;
+      sessionKey?: string;
+    },
+  ): Promise<MemorySearchResult[]> {
+    // 预热会话（如果配置了 onSessionStart）
+    await this.warmSession(opts?.sessionKey);
+
+    // 自动同步（如果配置了 onSearch）
+    const onSearch = this.options.sync?.onSearch ?? true;
+    if (onSearch && (this.dirty || this.sessionsDirty)) {
+      await this.sync({ reason: "search" }).catch((err) => {
+        console.error("Sync failed (search):", err);
+      });
+    }
+
+    // 获取配置
+    const maxResults = this.options.query?.maxResults ?? opts?.maxResults ?? 5;
+    const minScore = this.options.query?.minScore ?? opts?.minScore ?? 0.0;
+    const hybrid = this.options.query?.hybrid;
+
+    // 清理查询
+    const cleaned = query.trim();
+    if (!cleaned) return [];
+
+    // 混合搜索
+    const vectorResults = await this.searchVector(cleaned, maxResults);
+    const textResults =
+      hybrid?.enabled && this.hasFullTextSearch()
+        ? await this.searchKeyword(cleaned, maxResults)
+        : [];
+
+    // 合并结果
+    const merged =
+      hybrid?.enabled && textResults.length > 0
+        ? this.mergeHybridResults({
+            vector: vectorResults,
+            keyword: textResults,
+            vectorWeight: hybrid.vectorWeight ?? 0.7,
+            textWeight: hybrid.textWeight ?? 0.3,
+          })
+        : vectorResults;
+
+    // 过滤低分结果
+    return merged.filter((r) => r.score >= minScore);
+  }
+
+  /**
    * 向量搜索
    */
-  async search(query: string, topK: number = 5): Promise<MemorySearchResult[]> {
-    // 1. 检查向量表是否存在
+  private async searchVector(
+    query: string,
+    maxResults: number,
+  ): Promise<MemorySearchResult[]> {
+    // 检查向量表是否存在
     const vecTableExists = this.db.prepare(
       "SELECT name FROM sqlite_master WHERE type='table' AND name='chunks_vec'"
     ).get() as { name: string } | undefined;
 
     if (!vecTableExists) {
-      // 向量表不可用，返回空结果
-      console.warn("Vector table not available, returning empty results");
+      console.warn("Vector table not available");
       return [];
     }
 
-    // 2. 生成查询的 embedding
+    // 生成查询的 embedding
     const queryEmbedding = await this.embeddingProvider.embed(query);
     const queryVector = JSON.stringify(queryEmbedding.embedding);
 
-    // 3. 使用 sqlite-vec 进行相似度搜索
+    // 使用 sqlite-vec 进行相似度搜索
     try {
       const results = this.db.prepare(`
         SELECT
@@ -338,7 +491,7 @@ export class MemoryIndexManager {
         WHERE embedding MATCH ?
         ORDER BY distance
         LIMIT ?
-      `).all(queryVector, topK) as Array<{
+      `).all(queryVector, maxResults) as Array<{
         path: string;
         start_line: number;
         end_line: number;
@@ -347,9 +500,7 @@ export class MemoryIndexManager {
         distance: number;
       }>;
 
-      // 4. 转换距离为相似度分数
-      // sqlite-vec 返回的是 L2 距离，距离越小越相似
-      // 转换为 0-1 的分数：1 / (1 + distance)
+      // 转换距离为相似度分数
       return results.map((r) => ({
         path: r.path,
         startLine: r.start_line,
@@ -362,6 +513,111 @@ export class MemoryIndexManager {
       console.error("Vector search failed:", error);
       return [];
     }
+  }
+
+  /**
+   * 关键词搜索（全文搜索）
+   */
+  private async searchKeyword(
+    query: string,
+    maxResults: number,
+  ): Promise<MemorySearchResult[]> {
+    if (!this.hasFullTextSearch()) {
+      return [];
+    }
+
+    try {
+      const results = this.db.prepare(`
+        SELECT
+          c.path,
+          c.start_line,
+          c.end_line,
+          c.text,
+          c.source,
+          bm25(chunks_fts) as score
+        FROM chunks_fts
+        JOIN chunks c ON chunks_fts.id = c.id
+        WHERE chunks_fts MATCH ?
+        ORDER BY score
+        LIMIT ?
+      `).all(query, maxResults) as Array<{
+        path: string;
+        start_line: number;
+        end_line: number;
+        text: string;
+        source: string;
+        score: number;
+      }>;
+
+      // BM25 分数转换为 0-1（简化处理）
+      const maxScore = Math.max(...results.map((r) => r.score), 1);
+
+      return results.map((r) => ({
+        path: r.path,
+        startLine: r.start_line,
+        endLine: r.end_line,
+        score: r.score / maxScore,
+        snippet: r.text,
+        source: r.source as "memory" | "sessions",
+      }));
+    } catch (error) {
+      console.error("Keyword search failed:", error);
+      return [];
+    }
+  }
+
+  /**
+   * 合并混合搜索结果
+   */
+  private mergeHybridResults(params: {
+    vector: MemorySearchResult[];
+    keyword: MemorySearchResult[];
+    vectorWeight: number;
+    textWeight: number;
+  }): MemorySearchResult[] {
+    const { vector, keyword, vectorWeight, textWeight } = params;
+
+    // 创建结果映射（使用 path+startLine+endLine 作为唯一键）
+    const resultMap = new Map<
+      string,
+      MemorySearchResult & { vectorScore?: number; keywordScore?: number }
+    >();
+
+    // 添加向量搜索结果
+    for (const result of vector) {
+      const key = `${result.path}:${result.startLine}:${result.endLine}`;
+      resultMap.set(key, { ...result, vectorScore: result.score });
+    }
+
+    // 合并关键词搜索结果
+    for (const result of keyword) {
+      const key = `${result.path}:${result.startLine}:${result.endLine}`;
+      const existing = resultMap.get(key);
+
+      if (existing) {
+        // 已存在，合并分数
+        existing.keywordScore = result.score;
+        existing.score =
+          existing.vectorScore! * vectorWeight + result.score * textWeight;
+      } else {
+        // 不存在，添加新结果
+        resultMap.set(key, { ...result, keywordScore: result.score });
+      }
+    }
+
+    // 转换为数组并排序
+    return Array.from(resultMap.values()).sort((a, b) => b.score - a.score);
+  }
+
+  /**
+   * 检查是否支持全文搜索
+   */
+  private hasFullTextSearch(): boolean {
+    const ftsTableExists = this.db.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='chunks_fts'"
+    ).get() as { name: string } | undefined;
+
+    return !!ftsTableExists;
   }
 
   /**

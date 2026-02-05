@@ -99,18 +99,19 @@ export class MemoryService {
       return [];
     }
 
-    const results = await this.manager.search(query, this.config.maxSearchResults);
+    const results = await this.manager.search(query, {
+      maxResults: this.config.maxSearchResults,
+      minScore: this.config.minScore,
+    });
 
-    // 过滤低分结果
-    return results
-      .filter((r) => r.score >= this.config.minScore)
-      .map((r) => ({
-        path: r.path,
-        startLine: r.startLine,
-        endLine: r.endLine,
-        score: r.score,
-        snippet: r.snippet,
-      }));
+    // 返回结果
+    return results.map((r) => ({
+      path: r.path,
+      startLine: r.startLine,
+      endLine: r.endLine,
+      score: r.score,
+      snippet: r.snippet,
+    }));
   }
 
   /**

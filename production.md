@@ -261,6 +261,8 @@ Hi there!
 - 📝 **Markdown 长期记忆**：自动管理 `workspace/memory/` 目录
 - 🔨 **智能分块**：按 token 数分割，支持 overlap
 - 👀 **实时监听**：使用 chokidar 监听文件变化，自动更新索引
+- 🔄 **自动同步**：支持搜索前同步、会话启动预热、定期后台同步
+- 🔀 **混合搜索**：向量搜索 + 关键词搜索，可配置权重
 
 **使用方式**：
 
@@ -273,13 +275,37 @@ const manager = new MemoryIndexManager({
   workspaceDir: "./workspace",
   embeddingProvider: new OllamaEmbeddingProvider(),
   chunkConfig: { tokens: 500, overlap: 50 },
+  config: {
+    // 同步配置
+    sync: {
+      onSearch: true,              // 搜索前自动同步
+      onSessionStart: true,         // 会话启动时预热
+      watch: true,                  // 监控文件变化
+      watchDebounceMs: 5000,        // 防抖时间（5秒）
+      intervalMinutes: 30,          // 定期同步（30分钟）
+    },
+    // 查询配置
+    query: {
+      maxResults: 5,                // 最大结果数
+      minScore: 0.5,                // 最低分数
+      hybrid: {
+        enabled: true,              // 启用混合搜索
+        vectorWeight: 0.7,          // 向量搜索权重
+        textWeight: 0.3,            // 关键词搜索权重
+      },
+    },
+  },
 });
 
 // 启动（会自动索引和启动监听）
 await manager.start();
 
 // 搜索记忆
-const results = await manager.search("What is the project about?", 5);
+const results = await manager.search("What is the project about?", {
+  maxResults: 5,
+  minScore: 0.5,
+  sessionKey: "user:123",  // 可选：触发会话预热
+});
 
 // 获取统计信息
 const stats = manager.getStats();
@@ -334,7 +360,28 @@ CREATE TABLE embedding_cache (
 - 智能：向量搜索支持语义理解
 - 实时：文件变化自动更新索引
 
-**新增功能**（2026-02-04）：
+**新增功能**（2026-02-05）：
+
+✅ **Memory Storage 增强**（基于 openclaw-cn-ds 设计）：
+- ✅ **自动同步机制**：
+  - `onSearch` - 搜索前自动同步（检查 dirty 标志）
+  - `onSessionStart` - 会话启动时预热索引
+  - `intervalMinutes` - 定期后台同步
+  - `watch` - 文件变化自动同步（chokidar 监控）
+- ✅ **混合搜索**：
+  - 向量搜索（sqlite-vec）
+  - 关键词搜索（FTS5）
+  - 可配置权重（vectorWeight, textWeight）
+  - 智能结果合并
+- ✅ **灵活配置**：
+  - `MemoryStorageConfig` 接口
+  - 支持同步配置、查询配置
+  - 完整的类型定义
+- ✅ **性能优化**：
+  - 并发同步控制（syncInProgress 标志）
+  - 会话预热缓存（sessionWarm Set）
+  - 防抖机制（watchDebounceMs）
+  - awaitWriteFinish 优化文件监听
 
 ✅ **Skills 系统（基于 pi-coding-agent）**：
   - 使用 `@mariozechner/pi-coding-agent` 库
@@ -654,6 +701,7 @@ const agent1Sessions = sessions.filter((s: any) =>
 - [x] 集成测试（80+ 个测试通过）
 - [x] **Skills 系统**（基于 @mariozechner/pi-coding-agent）
 - [x] 技能热加载（chokidar）
+- [x] **Memory Storage 增强**（自动同步 + 混合搜索）
 - [ ] 技能多位置加载（Managed、Workspace、Extra）
 - [ ] 技能依赖自动安装
 - [ ] 性能监控

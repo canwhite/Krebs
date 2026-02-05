@@ -454,12 +454,12 @@ describe("Memory Storage - MemoryIndexManager", () => {
       // 创建新文件
       await fs.writeFile(path.join(memoryDir, "new.md"), "# New\n\nContent");
 
-      // 等待监听器触发（debounce 5秒）
-      await new Promise((resolve) => setTimeout(resolve, 6000));
+      // 等待监听器触发（debounce 5秒 + awaitWriteFinish 100ms + 缓冲）
+      await new Promise((resolve) => setTimeout(resolve, 7000));
 
       const stats = manager.getStats();
       expect(stats.fileCount).toBe(1);
-    }, 10000); // 10秒超时
+    }, 15000); // 15秒超时
 
     it("应该监听文件修改", async () => {
       const testFile = path.join(memoryDir, "test.md");
