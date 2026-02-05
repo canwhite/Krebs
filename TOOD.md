@@ -1,3 +1,5 @@
+//TOOD，如果tools中有需要key的工具，就将key在item中预留出来等待我填写
+
 llm provider写个抽象类，将和tool call耦合的部分写到那里
 DONE:技能描述中可以包含任何命令行工具的使用说明。未来的版本将支持自动安装依赖。
 

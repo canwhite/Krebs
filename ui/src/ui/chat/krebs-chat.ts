@@ -1,6 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { ref, createRef } from 'lit/directives/ref.js';
+import { KrebsMarkdown } from '../components/krebs-markdown.js';
 
 interface Message {
   id: string;
@@ -88,6 +89,7 @@ export class KrebsChat extends LitElement {
       background-color: var(--color-surface);
       border: 1px solid var(--color-border);
       overflow-x: auto;
+      min-width: 0; /* Prevent overflow issues */
     }
 
     .message.user .message-content {
@@ -99,19 +101,6 @@ export class KrebsChat extends LitElement {
     .message-content img {
       max-width: 100%;
       border-radius: var(--radius-md);
-    }
-
-    .message-content pre {
-      background-color: var(--color-bg);
-      padding: var(--spacing-md);
-      border-radius: var(--radius-md);
-      overflow-x: auto;
-      margin: var(--spacing-sm) 0;
-    }
-
-    .message-content code {
-      font-family: 'Monaco', 'Menlo', monospace;
-      font-size: var(--font-size-sm);
     }
 
     .tool-calls {
@@ -221,6 +210,10 @@ export class KrebsChat extends LitElement {
       .input-container {
         left: 80px;
       }
+
+      .message-content {
+        padding: var(--spacing-sm);
+      }
     }
   `;
 
@@ -248,7 +241,14 @@ export class KrebsChat extends LitElement {
                 ${msg.role === 'user' ? 'U' : 'AI'}
               </div>
               <div class="message-content">
-                ${this.renderMessageContent(msg)}
+                ${msg.role === 'user'
+                  ? html`${msg.content}`
+                  : html`
+                      <krebs-markdown
+                        .content=${msg.content}
+                        .isUser=${false}
+                      ></krebs-markdown>
+                    `}
                 ${msg.toolCalls ? this.renderToolCalls(msg.toolCalls) : ''}
               </div>
             </div>
@@ -289,17 +289,6 @@ export class KrebsChat extends LitElement {
         </div>
       </div>
     `;
-  }
-
-  private renderMessageContent(message: Message) {
-    // Simple markdown rendering for now
-    const content = message.content
-      .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
-      .replace(/`([^`]+)`/g, '<code>$1</code>')
-      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-      .replace(/\n/g, '<br>');
-
-    return html`<div .innerHTML=${content}></div>`;
   }
 
   private renderToolCalls(toolCalls: ToolCall[]) {

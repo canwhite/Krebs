@@ -7,6 +7,7 @@ import './components/krebs-sidebar-nav.js';
 import './components/krebs-tools-panel.js';
 import './components/krebs-skills-panel.js';
 import './components/krebs-tool-card.js';
+import './components/krebs-markdown.js';
 import type { TabType } from './components/krebs-sidebar-nav.js';
 
 /**

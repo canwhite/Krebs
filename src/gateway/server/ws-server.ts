@@ -34,9 +34,25 @@ export class GatewayWsServer {
     this.port = port;
     this.host = host;
 
+    // 创建WebSocketServer，并在监听error事件
     this.wss = new WebSocketServer({
       port: this.port,
       host: this.host,
+    });
+
+    // 监听error事件，防止未捕获的错误导致进程崩溃
+    this.wss.on("error", (error: Error) => {
+      if ((error as any).code === "EADDRINUSE") {
+        log.error(`❌ 端口 ${this.port} 已被占用！`);
+        log.error(`   请检查是否有其他服务正在使用该端口`);
+        log.error(`   您可以使用以下命令查找占用端口的进程:`);
+        log.error(`   lsof -i :${this.port}`);
+        log.error(`   或`);
+        log.error(`   kill -9 $(lsof -t -i :${this.port})  # 终止占用端口的进程`);
+        process.exit(1);
+      } else {
+        log.error("WebSocket server error:", error);
+      }
     });
 
     this.setupHandlers();

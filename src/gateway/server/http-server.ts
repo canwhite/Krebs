@@ -317,10 +317,26 @@ export class GatewayHttpServer {
    * 启动服务器
    */
   async start(): Promise<void> {
-    return new Promise((resolve) => {
-      this.app.listen(this.port, this.host, () => {
+    return new Promise((resolve, reject) => {
+      const server = this.app.listen(this.port, this.host, () => {
         log.info(`HTTP server listening on http://${this.host}:${this.port}`);
         resolve();
+      });
+
+      // 监听error事件，防止端口占用等问题导致进程崩溃
+      server.on("error", (error: Error) => {
+        if ((error as any).code === "EADDRINUSE") {
+          log.error(`❌ 端口 ${this.port} 已被占用！`);
+          log.error(`   请检查是否有其他服务正在使用该端口`);
+          log.error(`   您可以使用以下命令查找占用端口的进程:`);
+          log.error(`   lsof -i :${this.port}`);
+          log.error(`   或`);
+          log.error(`   kill -9 $(lsof -t -i :${this.port})  # 终止占用端口的进程`);
+          reject(error);
+        } else {
+          log.error("HTTP server error:", error);
+          reject(error);
+        }
       });
     });
   }
