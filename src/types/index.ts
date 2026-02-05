@@ -8,6 +8,8 @@ export interface Message {
   role: "user" | "assistant" | "system";
   content: string;
   timestamp?: number;
+  /** 工具调用（可选） */
+  toolCalls?: any[];
 }
 
 export interface ChatCompletionOptions {
@@ -50,6 +52,10 @@ export interface AgentConfig {
   workspaceDir?: string;
   timezone?: string;
   userIdentity?: string;
+
+  // 新增：Model Fallback 配置
+  fallbackEnabled?: boolean;
+  fallbackModels?: Array<{ provider: string; model: string }>;
 }
 
 export interface AgentContext {
@@ -60,6 +66,7 @@ export interface AgentContext {
 
 export interface AgentResult {
   response: string;
+  payloads?: any[];  // Payload[] - 新增：支持结构化结果
   usage?: {
     promptTokens: number;
     completionTokens: number;

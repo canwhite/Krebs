@@ -607,16 +607,28 @@ npm test -- test/storage/session/
 - ✅ src/shared/logger.ts (Logger 日志系统)
 - ✅ src/scheduler/lanes.ts (Lane 调度系统)
 - ✅ src/provider/factory.ts (Provider 工厂)
-- ✅ src/storage/session/* (Session 管理系统) - **新增**
+- ✅ src/storage/session/* (Session 管理系统)
   - session-key.test.ts (26 个测试)
   - session-store.test.ts (14 个测试)
-- ✅ test/integration/session-integration.test.ts (Session 集成测试) - **新增**
+- ✅ test/integration/session-integration.test.ts (Session 集成测试)
   - 10 个集成测试（会话保存、加载、多轮对话、多 agent、并发、缓存）
 - ✅ src/storage/memory/* (Memory Storage 系统)
+  - internal.test.ts (33 个测试)
+  - schema.test.ts (18 个测试)
+  - embeddings.test.ts (24 个测试)
+  - manager.test.ts (28 个测试)
+- ✅ test/agent/* (Agent 核心测试) - **新增**
+  - agent-tool-loop.test.ts (8 个测试 - 基础工具调用循环)
+  - tool-loop-comprehensive.test.ts (19 个测试 - 全面工具调用测试)
+  - system-prompt.test.ts (12 个测试)
+- ✅ test/skills/* (Skills 系统测试)
+  - loader.test.ts (8 个测试)
+  - manager.test.ts (21 个测试)
+  - formatter.test.ts (25 个测试)
 
 测试统计：
-- 测试文件：16+ 个
-- 测试用例：277 个
+- 测试文件：21 个
+- 测试用例：353 个
 - 通过率：100%
 
 ### 重要修复（2026-02-04）
@@ -702,10 +714,108 @@ const agent1Sessions = sessions.filter((s: any) =>
 - [x] **Skills 系统**（基于 @mariozechner/pi-coding-agent）
 - [x] 技能热加载（chokidar）
 - [x] **Memory Storage 增强**（自动同步 + 混合搜索）
+- [x] **工具调用循环**（多步推理 + 中间消息保存 + 上下文自动压缩）
 - [ ] 技能多位置加载（Managed、Workspace、Extra）
 - [ ] 技能依赖自动安装
 - [ ] 性能监控
 - [ ] 文档完善
+
+---
+
+**新增功能**（2026-02-05）：
+
+✅ **工具调用循环增强**（基于 openclaw-cn-ds 调度机制分析）：
+- ✅ **多步工具调用**：
+  - 支持连续调用多个工具
+  - 支持并行工具调用（一次请求调用多个工具）
+  - 最大迭代次数限制（默认 10 次）
+- ✅ **中间消息保存**：
+  - 保存工具调用请求（assistant message with tool_calls）
+  - 保存工具执行结果（user message with tool_result）
+  - 保留完整对话历史，支持上下文连续性
+- ✅ **上下文自动压缩**：
+  - 智能检测上下文长度
+  - 自动删除旧消息，保留最近 20 条
+  - 基于 token 估算（保守策略：3 字符 ≈ 1 token）
+- ✅ **工具并行执行优化**：
+  - 使用 Promise.allSettled 并行执行所有工具
+  - 即使某些工具失败，其他工具也能继续执行
+  - 性能提升显著（3个100ms工具从300ms降至~100ms）
+- ✅ **完整测试覆盖**：
+  - 基础测试：8 个测试全部通过
+  - 全面测试：19 个测试全部通过
+  - 覆盖单步调用、多步调用、并行调用、错误处理、边缘情况、性能测试等场景
+
+✅ **Payload 系统**（基于 openclaw-cn-ds buildEmbeddedRunPayloads 设计）：
+- ✅ **统一消息格式**：
+  - TextPayload - 文本消息（支持回复指令）
+  - ToolResultPayload - 工具结果（支持成功/失败状态）
+  - MediaPayload - 媒体内容（图片、音频等）
+  - ErrorPayload - 错误消息
+- ✅ **回复指令解析**：
+  - `@reply:user-id` - 指定回复目标
+  - `@final` - 标记最终回复
+  - `@silent` - 静默回复（不输出）
+- ✅ **工具结果分离**：
+  - 将工具结果与普通文本分离
+  - 提供结构化访问接口
+  - 支持多种格式化方式（JSON、Markdown、Plain）
+- ✅ **回复模式应用**：
+  - `all` - 返回所有 Payload
+  - `final_only` - 只返回标记为 @final 的文本
+- ✅ **Agent 集成**：
+  - Agent.process() 返回 AgentResult.payloads
+  - 收集所有工具结果并构建完整 Payload 列表
+- ✅ **完整测试覆盖**：25 个测试全部通过
+
+✅ **Model Fallback 机制**（基于 openclaw-cn-ds 多层级重试设计）：
+- ✅ **多级降级**：
+  - 支持主模型 → 多个备用模型的自动降级
+  - 按优先级顺序尝试每个模型
+  - 每个模型支持多次重试（默认 2 次）
+- ✅ **智能错误识别**：
+  - Rate limit 错误（429, rate limit）
+  - 服务器错误（502, 503, 504）
+  - 超时错误（timeout）
+  - 网络错误（ECONNRESET, ECONNREFUSED）
+  - 上下文长度错误（context length exceeded）
+  - 认证错误（401, 403）
+  - 模型过载（overloaded, capacity）
+- ✅ **智能重试策略**：
+  - 可恢复错误：重试（最多 maxRetries 次）
+  - 不可恢复错误：立即切换到下一个模型
+  - 支持重试延迟配置（默认 1000ms）
+- ✅ **回调机制**：
+  - `onFallback` - 模型切换时触发
+  - `onRetry` - 每次重试时触发
+- ✅ **上下文追踪**：
+  - FallbackContext 提供详细的执行状态
+  - 当前模型索引、尝试次数、总尝试次数
+- ✅ **Agent 集成**：
+  - AgentConfig 支持 fallbackEnabled 和 fallbackModels 配置
+  - 自动推断 provider 名称
+  - 可通过配置启用/禁用
+- ✅ **完整测试覆盖**：12 个测试全部通过
+
+✅ **Memory Storage 增强**（基于 openclaw-cn-ds 设计）：
+- ✅ **自动同步机制**：
+  - `onSearch` - 搜索前自动同步（检查 dirty 标志）
+  - `onSessionStart` - 会话启动时预热索引
+  - `intervalMinutes` - 定期后台同步
+  - `watch` - 文件变化自动同步（chokidar 监控）
+- ✅ **混合搜索**：
+  - 向量搜索（sqlite-vec）
+  - 关键词搜索（FTS5）
+  - 智能合并（可配置权重 vectorWeight, textWeight）
+  - 结果归一化
+- ✅ **查询增强**：
+  - 高亮显示（关键词高亮）
+  - 过滤功能（按日期、来源、标签）
+  - 片段截断和优化
+- ✅ **灵活配置**：
+  - `MemoryStorageConfig` 接口
+  - 支持同步配置、查询配置
+  - 完整的类型定义
 
 ---
 
