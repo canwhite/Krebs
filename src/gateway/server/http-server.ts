@@ -8,6 +8,8 @@
  */
 
 import express from "express";
+import path from "path";
+import { fileURLToPath } from "url";
 import { createLogger } from "../../shared/logger.js";
 import type { AgentManager } from "@/agent/core/index.js";
 import type { IChatService } from "../service/chat-service.js";
@@ -70,7 +72,78 @@ export class GatewayHttpServer {
       res.json({ status: "ok", timestamp: Date.now() });
     });
 
-    // 聊天接口
+    this.app.get("/api/health", (_, res) => {
+      res.json({ status: "ok", timestamp: Date.now() });
+    });
+
+    // 静态文件服务 (UI)
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = path.dirname(__filename);
+    const uiDistPath = path.join(__dirname, "../../../ui/dist");
+
+    this.app.use(express.static(uiDistPath));
+
+    // SPA fallback - 所有其他路由返回 index.html
+    this.app.get("/ui/*splat", (_, res) => {
+      res.sendFile(path.join(uiDistPath, "index.html"));
+    });
+
+    // 工具列表
+    this.app.get("/api/tools", async (_, res) => {
+      try {
+        const tools = await this.handleGetTools();
+        res.json({ tools });
+      } catch (error) {
+        log.error("Get tools error:", error);
+        res.status(500).json({ error: String(error) });
+      }
+    });
+
+    // 技能列表
+    this.app.get("/api/skills", async (_, res) => {
+      try {
+        const skills = await this.handleGetSkills();
+        res.json({ skills });
+      } catch (error) {
+        log.error("Get skills error:", error);
+        res.status(500).json({ error: String(error) });
+      }
+    });
+
+    // 技能启用/禁用
+    this.app.patch("/api/skills/:skillId", async (req, res) => {
+      try {
+        const { skillId } = req.params;
+        const { enabled } = req.body;
+        await this.handleToggleSkill(skillId, enabled);
+        res.json({ success: true });
+      } catch (error) {
+        log.error("Toggle skill error:", error);
+        res.status(500).json({ error: String(error) });
+      }
+    });
+
+    // 聊天接口 (简化版，直接接受消息)
+    this.app.post("/api/chat", async (req, res) => {
+      try {
+        const { message, sessionId, agentId } = req.body;
+        const result = await this.chatService.process(
+          agentId || "default",
+          message,
+          sessionId || "default"
+        );
+        res.json({
+          content: result.response,
+          toolCalls: result.toolCalls,
+          usage: result.usage,
+        });
+      } catch (error) {
+        log.error("Chat error:", error);
+        res.status(500).json({ error: String(error) });
+      }
+    });
+
+    // 聊天接口 (RequestFrame 格式，保持向后兼容)
     this.app.post("/api/chat", async (req, res) => {
       try {
         const frame: RequestFrame<ChatSendParams> = req.body;
@@ -193,6 +266,52 @@ export class GatewayHttpServer {
     return {
       sessions: [],
     };
+  }
+
+  private async handleGetTools() {
+    // 从 AgentManager 获取可用工具
+    const agent = this.agentManager.getAgent("default");
+    if (!agent) {
+      return [];
+    }
+
+    // 获取工具定义
+    const tools = agent.getTools?.() || [];
+    return tools.map((tool: any) => ({
+      name: tool.name,
+      description: tool.description,
+      category: tool.category || "general",
+    }));
+  }
+
+  private async handleGetSkills() {
+    // 从 SkillsManager 获取可用技能
+    const skillsManager = this.agentManager.getSkillsManager?.();
+    if (!skillsManager) {
+      return [];
+    }
+
+    const skills = skillsManager.listSkills();
+    return skills.map((skill: any) => ({
+      id: skill.id,
+      name: skill.name,
+      description: skill.description,
+      enabled: skill.enabled ?? true,
+      category: skill.category || "general",
+    }));
+  }
+
+  private async handleToggleSkill(skillId: string, enabled: boolean) {
+    const skillsManager = this.agentManager.getSkillsManager?.();
+    if (!skillsManager) {
+      throw new Error("Skills manager not available");
+    }
+
+    if (enabled) {
+      await skillsManager.enableSkill(skillId);
+    } else {
+      await skillsManager.disableSkill(skillId);
+    }
   }
 
   private successResponse<T>(id: string, result: T): ResponseFrame<T> {
