@@ -1,7 +1,7 @@
 /**
  * 内置工具实现
  *
- * 提供 bash、read、write 等基础工具
+ * 提供 bash、read、write、web_search、web_fetch 等基础工具
  */
 
 import { exec } from "node:child_process";
@@ -11,6 +11,7 @@ import path from "node:path";
 import { createLogger } from "@/shared/logger.js";
 
 import type { Tool } from "./types.js";
+import { webSearchTool, webFetchTool } from "./web.js";
 
 const logger = createLogger("BuiltinTools");
 
@@ -33,6 +34,10 @@ export const bashTool: Tool = {
         type: "string",
         description: "The working directory for the command (optional, defaults to current directory)",
       },
+      timeout: {
+        type: "number",
+        description: "Timeout in milliseconds (default: 30000, range: 1000-120000). For network requests, consider increasing this value.",
+      },
     },
     required: ["command"],
   },
@@ -40,6 +45,10 @@ export const bashTool: Tool = {
   async execute(params): Promise<{ success: boolean; output?: string; error?: string }> {
     const command = params.command as string;
     const cwd = params.cwd as string | undefined;
+    const timeout = (params.timeout as number) || 30000;
+
+    // 限制超时范围：1秒 - 120秒
+    const actualTimeout = Math.min(Math.max(timeout, 1000), 120000);
 
     if (!command || typeof command !== "string") {
       return {
@@ -50,19 +59,25 @@ export const bashTool: Tool = {
 
     return new Promise((resolve) => {
       const startTime = Date.now();
-      const timeout = 30000; // 30 秒超时
 
-      logger.debug(`Executing bash command: ${command}`);
+      logger.debug(`Executing bash command: ${command} (timeout: ${actualTimeout}ms)`);
+
+      let capturedOutput = "";
+      let capturedError = "";
 
       const childProcess = exec(
         command,
         {
           cwd: cwd || process.cwd(),
-          timeout,
+          timeout: actualTimeout,
           maxBuffer: 10 * 1024 * 1024, // 10MB buffer
         },
         (error, stdout, stderr) => {
           const duration = Date.now() - startTime;
+
+          // 捕获输出
+          if (stdout) capturedOutput = stdout;
+          if (stderr) capturedError = stderr;
 
           if (error) {
             logger.error(`Bash command failed: ${command}`, {
@@ -91,12 +106,14 @@ export const bashTool: Tool = {
 
       // 处理超时
       childProcess.on("timeout", () => {
-        logger.error(`Bash command timeout: ${command}`);
+        logger.error(`Bash command timeout: ${command} after ${actualTimeout}ms`);
         childProcess.kill("SIGKILL");
 
         resolve({
           success: false,
-          error: `Command timed out after ${timeout}ms`,
+          error: `Command timed out after ${actualTimeout}ms. ` +
+                 `For network requests, try increasing the timeout parameter or using curl's --max-time option.`,
+          output: capturedError || capturedOutput,
         });
       });
     });
@@ -222,8 +239,132 @@ export const writeTool: Tool = {
 };
 
 /**
+ * Edit 工具
+ *
+ * 编辑文件内容（精确字符串替换）
+ */
+export const editTool: Tool = {
+  name: "edit_file",
+  description: "Make precise edits to a file by replacing exact string matches. Use this to modify specific parts of a file without rewriting the entire content.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      path: {
+        type: "string",
+        description: "The path to the file to edit",
+      },
+      oldString: {
+        type: "string",
+        description: "The exact string to replace. Must match exactly (case-sensitive)",
+      },
+      newString: {
+        type: "string",
+        description: "The new string to replace the old string with",
+      },
+      replaceAll: {
+        type: "boolean",
+        description: "Replace all occurrences (default: false, only replaces first match)",
+      },
+    },
+    required: ["path", "oldString", "newString"],
+  },
+
+  async execute(params): Promise<{ success: boolean; message?: string; error?: string }> {
+    const filePath = params.path as string;
+    const oldString = params.oldString as string;
+    const newString = params.newString as string;
+    const replaceAll = params.replaceAll as boolean || false;
+
+    // 参数验证
+    if (!filePath || typeof filePath !== "string") {
+      return {
+        success: false,
+        error: "Path is required and must be a string",
+      };
+    }
+
+    if (!oldString || typeof oldString !== "string") {
+      return {
+        success: false,
+        error: "oldString is required and must be a string",
+      };
+    }
+
+    if (newString === null || newString === undefined) {
+      return {
+        success: false,
+        error: "newString is required",
+      };
+    }
+
+    try {
+      // 读取文件内容
+      const content = await fs.readFile(filePath, "utf-8");
+
+      // 检查 oldString 是否存在
+      if (!content.includes(oldString)) {
+        return {
+          success: false,
+          error: `Could not find the specified oldString in the file. The exact string was not found.`,
+        };
+      }
+
+      // 执行替换
+      let newContent: string;
+      let replacements = 0;
+
+      if (replaceAll) {
+        // 替换所有匹配项
+        const matches = content.split(oldString);
+        replacements = matches.length - 1;
+        newContent = content.split(oldString).join(newString);
+      } else {
+        // 只替换第一个匹配项
+        const index = content.indexOf(oldString);
+        if (index !== -1) {
+          replacements = 1;
+          newContent = content.substring(0, index) + newString + content.substring(index + oldString.length);
+        } else {
+          newContent = content;
+        }
+      }
+
+      // 写回文件
+      await fs.writeFile(filePath, newContent, "utf-8");
+
+      logger.debug(`File edited successfully: ${filePath}`, {
+        replacements,
+        replaceAll,
+      });
+
+      return {
+        success: true,
+        message: `Successfully replaced ${replacements} occurrence(s) in ${filePath}`,
+      };
+    } catch (error) {
+      // 文件不存在错误
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+        return {
+          success: false,
+          error: `File not found: ${filePath}. Use write_file to create new files.`,
+        };
+      }
+
+      logger.error(`Failed to edit file: ${filePath}`, error);
+
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  },
+};
+
+/**
  * 获取所有内置工具
  */
 export function getBuiltinTools(): Tool[] {
-  return [bashTool, readTool, writeTool];
+  // 始终包含所有工具，包括 Web 工具
+  // 工具执行时会检查 API Key
+  return [bashTool, readTool, writeTool, editTool, webSearchTool, webFetchTool];
 }
