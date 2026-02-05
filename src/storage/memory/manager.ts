@@ -162,8 +162,6 @@ export class MemoryIndexManager {
 
     const pathsToWatch = [memoryDir, memoryFile, altMemoryFile];
 
-    const watchDebounceMs = this.options.sync?.watchDebounceMs ?? 5000;
-
     this.watcher = chokidar.watch(pathsToWatch, {
       ignoreInitial: true,
       persistent: true,
@@ -428,6 +426,8 @@ export class MemoryIndexManager {
     const maxResults = this.options.query?.maxResults ?? opts?.maxResults ?? 5;
     const minScore = this.options.query?.minScore ?? opts?.minScore ?? 0.0;
     const hybrid = this.options.query?.hybrid;
+    const highlight = this.options.query?.highlight;
+    const filter = this.options.query?.filter;
 
     // 清理查询
     const cleaned = query.trim();
@@ -452,7 +452,28 @@ export class MemoryIndexManager {
         : vectorResults;
 
     // 过滤低分结果
-    return merged.filter((r) => r.score >= minScore);
+    let filtered = merged.filter((r) => r.score >= minScore);
+
+    // 应用过滤器
+    if (filter) {
+      filtered = this.filterResults(filtered, filter);
+    }
+
+    // 应用高亮
+    if (highlight?.enabled) {
+      filtered = filtered.map((result) => ({
+        ...result,
+        highlighted: this.highlightSnippet(
+          result.snippet,
+          cleaned,
+          highlight.prefix ?? "**",
+          highlight.suffix ?? "**",
+          highlight.maxLength ?? 200,
+        ),
+      }));
+    }
+
+    return filtered;
   }
 
   /**
@@ -667,4 +688,109 @@ export class MemoryIndexManager {
       };
     }
   }
+
+  /**
+   * 高亮片段中的关键词
+   */
+  private highlightSnippet(
+    text: string,
+    query: string,
+    prefix: string,
+    suffix: string,
+    maxLength: number,
+  ): string {
+    // 提取查询中的关键词（移除常见停用词）
+    const stopWords = new Set([
+      "the",
+      "a",
+      "an",
+      "and",
+      "or",
+      "but",
+      "in",
+      "on",
+      "at",
+      "to",
+      "for",
+      "of",
+      "with",
+      "by",
+    ]);
+    const keywords = query
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((word) => word.length > 2 && !stopWords.has(word));
+
+    if (keywords.length === 0) {
+      // 截断到最大长度
+      return text.length > maxLength ? text.slice(0, maxLength) + "..." : text;
+    }
+
+    // 创建正则表达式（不区分大小写）
+    const pattern = new RegExp(`(${keywords.map((k) => escapeRegExp(k)).join("|")})`, "gi");
+
+    // 高亮匹配的关键词
+    let highlighted = text.replace(pattern, `${prefix}$1${suffix}`);
+
+    // 截断到最大长度（尽量在高亮处截断）
+    if (highlighted.length > maxLength) {
+      const firstHighlight = highlighted.indexOf(prefix);
+      if (firstHighlight > 0) {
+        const start = Math.max(0, firstHighlight - 50);
+        highlighted =
+          (start > 0 ? "..." : "") + highlighted.slice(start, start + maxLength) + "...";
+      } else {
+        highlighted = highlighted.slice(0, maxLength) + "...";
+      }
+    }
+
+    return highlighted;
+  }
+
+  /**
+   * 过滤搜索结果
+   */
+  private filterResults(
+    results: MemorySearchResult[],
+    filter: NonNullable<MemoryStorageConfig["query"]>["filter"],
+  ): MemorySearchResult[] {
+    let filtered = results;
+
+    // 按来源过滤
+    if (filter?.sources && filter.sources.length > 0) {
+      filtered = filtered.filter((r) => filter.sources!.includes(r.source));
+    }
+
+    // 按日期范围过滤（从文件路径提取日期）
+    if (filter?.startDate || filter?.endDate) {
+      filtered = filtered.filter((result) => {
+        const dateMatch = result.path.match(/(\d{4}-\d{2}-\d{2})/);
+        if (!dateMatch) return true; // 没有日期的不过滤
+
+        const resultDate = new Date(dateMatch[1]);
+        const startDate = filter.startDate ? new Date(filter.startDate) : null;
+        const endDate = filter.endDate ? new Date(filter.endDate) : null;
+
+        if (startDate && resultDate < startDate) return false;
+        if (endDate && resultDate > endDate) return false;
+
+        return true;
+      });
+    }
+
+    // 按标签过滤（暂未实现，预留）
+    if (filter?.tags && filter.tags.length > 0) {
+      // TODO: 实现标签提取和过滤
+      console.warn("Tag filtering not yet implemented");
+    }
+
+    return filtered;
+  }
+}
+
+/**
+ * 转义正则表达式特殊字符
+ */
+function escapeRegExp(string: string): string {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

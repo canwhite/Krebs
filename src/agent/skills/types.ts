@@ -160,8 +160,17 @@ export interface SkillSnapshot {
  * 技能加载配置
  */
 export interface SkillsConfig {
-  /** 技能目录（Bundled Skills） */
+  /** 技能目录（Bundled Skills - 内置技能） */
   bundledSkillsDir: string;
+
+  /** 本地技能目录（Managed/local - 用户本地技能） */
+  localSkillsDir?: string;
+
+  /** 工作空间技能目录（Workspace - 工作空间特定技能） */
+  workspaceSkillsDir?: string;
+
+  /** 额外技能目录（Extra - 自定义技能路径） */
+  extraSkillsDirs?: string[];
 
   /** 是否启用热加载 */
   hotReload?: boolean;

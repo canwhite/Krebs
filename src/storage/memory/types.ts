@@ -55,6 +55,12 @@ export interface MemorySearchResult {
   snippet: string;
   /** 来源 */
   source: MemorySource;
+  /** 高亮片段（可选） */
+  highlighted?: string;
+  /** 标签列表（可选） */
+  tags?: string[];
+  /** 日期（可选） */
+  date?: string;
 }
 
 /**
@@ -226,6 +232,60 @@ export interface MemoryStorageConfig {
        * @default 0.3
        */
       textWeight?: number;
+    };
+
+    /**
+     * 高亮配置
+     */
+    highlight?: {
+      /**
+       * 是否启用高亮
+       * @default false
+       */
+      enabled?: boolean;
+
+      /**
+       * 高亮标签（前缀）
+       * @default "**"
+       */
+      prefix?: string;
+
+      /**
+       * 高亮标签（后缀）
+       * @default "**"
+       */
+      suffix?: string;
+
+      /**
+       * 最大片段长度
+       * @default 200
+       */
+      maxLength?: number;
+    };
+
+    /**
+     * 过滤配置
+     */
+    filter?: {
+      /**
+       * 日期范围（开始）
+       */
+      startDate?: string;
+
+      /**
+       * 日期范围（结束）
+       */
+      endDate?: string;
+
+      /**
+       * 标签过滤
+       */
+      tags?: string[];
+
+      /**
+       * 来源过滤
+       */
+      sources?: Array<"memory" | "sessions">;
     };
   };
 }
