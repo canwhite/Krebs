@@ -1,6 +1,6 @@
 # Krebs 项目全局文档
 
-> **维护时间**: 2026-02-04
+> **维护时间**: 2026-02-05
 > **文档状态**: 活跃维护中
 
 ---
@@ -43,6 +43,7 @@ agent (核心层)
   ├─ core
   │   ├─ agent.ts (Agent - LLM处理)
   │   ├─ orchestrator.ts (Orchestrator - 技能调度)
+  │   ├─ system-prompt.ts (System Prompt 构建器 - 参考 openclaw-cn-ds)
   │   └─ manager.ts (AgentManager - 依赖管理)
   └─ skills (技能系统 - 基于 pi-coding-agent)
       ├─ types.ts (类型定义)
@@ -80,6 +81,7 @@ Krebs/
 │   ├── agent/           # Agent 核心实现
 │   │   ├── core/        # 核心 Agent 类
 │   │   │   ├── agent.ts      # Agent 主类
+│   │   │   ├── system-prompt.ts # System Prompt 构建器
 │   │   │   └── manager.ts    # Agent 管理器
 │   │   └── skills/      # 技能系统
 │   │       ├── base.ts       # 技能基类
@@ -645,10 +647,11 @@ const agent1Sessions = sessions.filter((s: any) =>
 ### 第三阶段（功能增强）✅ 已完成
 - [x] **Session 管理系统**（增强的 Markdown 存储）
 - [x] **Session 集成方案**（工厂函数 + 文档 + 示例）
+- [x] **System Prompt 机制**（参考 openclaw-cn-ds，支持 full/minimal/none 三种模式）
 - [x] Memory Storage 系统（SQLite 索引 + 向量搜索）
 - [x] 向量搜索完整实现（sqlite-vec 集成）
 - [x] 记忆保存功能（每日日志 + 手动保存）
-- [x] 集成测试（68+ 个测试通过）
+- [x] 集成测试（80+ 个测试通过）
 - [x] **Skills 系统**（基于 @mariozechner/pi-coding-agent）
 - [x] 技能热加载（chokidar）
 - [ ] 技能多位置加载（Managed、Workspace、Extra）

@@ -37,12 +37,19 @@ export interface EmbeddingResult {
 export interface AgentConfig {
   id: string;
   name: string;
+  // 基础 system prompt（保持向后兼容）
   systemPrompt?: string;
   model?: string;
   temperature?: number;
   maxTokens?: number;
   tools?: string[];
   skills?: string[];
+
+  // 新增：System Prompt 机制配置
+  systemPromptMode?: "full" | "minimal" | "none";
+  workspaceDir?: string;
+  timezone?: string;
+  userIdentity?: string;
 }
 
 export interface AgentContext {

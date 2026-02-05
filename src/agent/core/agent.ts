@@ -21,6 +21,10 @@ import type {
 import type { LLMProvider } from "@/provider/index.js";
 import { CommandLane, enqueueInLane } from "@/scheduler/lanes.js";
 import type { Tool, ToolConfig } from "@/agent/tools/index.js";
+import {
+  buildAgentSystemPrompt,
+  type SystemPromptConfig,
+} from "./system-prompt.js";
 
 export interface AgentDeps {
   provider: LLMProvider;
@@ -321,25 +325,53 @@ export class Agent {
   /**
    * 构建完整的 System Prompt
    *
-   * 组合基础 system prompt 和 skills prompt
+   * 使用新的 system prompt 机制（参考 openclaw-cn-ds）
+   * 支持动态构建工具、技能、工作区等上下文信息
    */
   private buildSystemPrompt(): string {
-    const basePrompt = this.config.systemPrompt ?? "";
-
-    // 如果有 SkillsManager，添加 skills prompt
+    // 获取 skills 信息
+    let skills: Array<{ name: string; description: string; prompt?: string }> = [];
     if (this.deps.skillsManager) {
       try {
-        const skillsPrompt = this.deps.skillsManager.buildSkillsPrompt();
-        if (skillsPrompt) {
-          return `${basePrompt}\n\n${skillsPrompt}`;
+        // 尝试从 SkillsManager 获取 skills 列表
+        if (typeof this.deps.skillsManager.getSkills === "function") {
+          skills = this.deps.skillsManager.getSkills();
+        } else if (typeof this.deps.skillsManager.buildSkillsPrompt === "function") {
+          // 向后兼容：如果有 buildSkillsPrompt，解析它获取 skills
+          const skillsPrompt = this.deps.skillsManager.buildSkillsPrompt();
+          if (skillsPrompt) {
+            // 简单的解析逻辑 - 假设格式为 "## Skill: name\ndescription"
+            const skillBlocks = skillsPrompt.split(/\n##/).filter(Boolean);
+            skills = skillBlocks.map((block: string) => {
+              const lines = block.trim().split("\n");
+              const name = lines[0]?.replace(/^(Skill:\s*)?/i, "").trim() || "unknown";
+              const description = lines.slice(1).join("\n").trim() || "";
+              return { name, description };
+            });
+          }
         }
       } catch (error) {
-        // 如果构建 skills prompt 失败，只返回基础 prompt
-        console.error("Failed to build skills prompt:", error);
+        console.warn("Failed to get skills info:", error);
       }
     }
 
-    return basePrompt;
+    // 构建配置
+    const sysPromptConfig: SystemPromptConfig = {
+      promptMode: this.config.systemPromptMode || "full",
+      basePrompt: this.config.systemPrompt,
+      tools: this.deps.tools,
+      toolConfig: this.deps.toolConfig,
+      skills: skills.length > 0 ? skills : undefined,
+      workspaceDir: this.config.workspaceDir,
+      timezone: this.config.timezone,
+      userIdentity: this.config.userIdentity,
+      runtime: {
+        environment: (process.env.NODE_ENV as any) || "development",
+      },
+    };
+
+    // 使用新的构建函数
+    return buildAgentSystemPrompt(sysPromptConfig);
   }
 
   /**
