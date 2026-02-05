@@ -6,10 +6,6 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: true,
     target: 'esnext',
-    lib: {
-      entry: 'src/main.ts',
-      formats: ['es'],
-    },
     rollupOptions: {
       output: {
         entryFileNames: 'assets/[name].js',

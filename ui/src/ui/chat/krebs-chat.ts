@@ -30,15 +30,20 @@ export class KrebsChat extends LitElement {
       flex-direction: column;
       height: 100%;
       overflow: hidden;
+      min-height: 0;
+      position: relative;
     }
 
     .messages-container {
       flex: 1;
       overflow-y: auto;
       padding: var(--spacing-lg);
+      padding-bottom: 160px;
       display: flex;
       flex-direction: column;
       gap: var(--spacing-md);
+      scroll-behavior: smooth;
+      min-height: 0;
     }
 
     .message {
@@ -117,9 +122,16 @@ export class KrebsChat extends LitElement {
     }
 
     .input-container {
+      position: fixed;
+      bottom: 0;
+      left: 260px;
+      right: 0;
+      flex-shrink: 0;
       border-top: 1px solid var(--color-border);
       padding: var(--spacing-lg);
       background-color: var(--color-surface);
+      box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.05);
+      z-index: 100;
     }
 
     .input-wrapper {
@@ -160,6 +172,7 @@ export class KrebsChat extends LitElement {
       cursor: pointer;
       transition: background-color 0.2s;
       height: 44px;
+      flex-shrink: 0;
     }
 
     button.send-button:hover {
@@ -201,6 +214,12 @@ export class KrebsChat extends LitElement {
       50% {
         opacity: 1;
         transform: scale(1);
+      }
+    }
+
+    @media (max-width: 768px) {
+      .input-container {
+        left: 80px;
       }
     }
   `;
@@ -372,11 +391,12 @@ export class KrebsChat extends LitElement {
   }
 
   private scrollToBottom() {
-    setTimeout(() => {
+    // Use requestAnimationFrame for smoother scrolling
+    requestAnimationFrame(() => {
       if (this.messagesRef.value) {
         this.messagesRef.value.scrollTop = this.messagesRef.value.scrollHeight;
       }
-    }, 100);
+    });
   }
 }
 

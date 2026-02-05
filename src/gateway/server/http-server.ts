@@ -134,7 +134,7 @@ export class GatewayHttpServer {
         );
         res.json({
           content: result.response,
-          toolCalls: result.toolCalls,
+          payloads: result.payloads,
           usage: result.usage,
         });
       } catch (error) {
@@ -270,13 +270,7 @@ export class GatewayHttpServer {
 
   private async handleGetTools() {
     // 从 AgentManager 获取可用工具
-    const agent = this.agentManager.getAgent("default");
-    if (!agent) {
-      return [];
-    }
-
-    // 获取工具定义
-    const tools = agent.getTools?.() || [];
+    const tools = this.agentManager.getTools();
     return tools.map((tool: any) => ({
       name: tool.name,
       description: tool.description,
@@ -285,32 +279,26 @@ export class GatewayHttpServer {
   }
 
   private async handleGetSkills() {
-    // 从 SkillsManager 获取可用技能
-    const skillsManager = this.agentManager.getSkillsManager?.();
-    if (!skillsManager) {
-      return [];
-    }
-
-    const skills = skillsManager.listSkills();
+    // 从 SkillRegistry 获取可用技能
+    const skillRegistry = this.agentManager.getSkillRegistry();
+    const skills = skillRegistry.list();
     return skills.map((skill: any) => ({
-      id: skill.id,
+      id: skill.name,
       name: skill.name,
-      description: skill.description,
+      description: skill.description || "",
       enabled: skill.enabled ?? true,
       category: skill.category || "general",
     }));
   }
 
   private async handleToggleSkill(skillId: string, enabled: boolean) {
-    const skillsManager = this.agentManager.getSkillsManager?.();
-    if (!skillsManager) {
-      throw new Error("Skills manager not available");
-    }
-
-    if (enabled) {
-      await skillsManager.enableSkill(skillId);
-    } else {
-      await skillsManager.disableSkill(skillId);
+    // 注意：当前的 SkillRegistry 不支持启用/禁用功能
+    // 这里只是一个占位实现，实际功能可能需要扩展 SkillRegistry
+    const skillRegistry = this.agentManager.getSkillRegistry();
+    const skill = skillRegistry.get(skillId);
+    if (skill) {
+      // 暂时记录日志，不实际修改状态
+      log.info(`Skill ${skillId} toggle to ${enabled} (not implemented yet)`);
     }
   }
 

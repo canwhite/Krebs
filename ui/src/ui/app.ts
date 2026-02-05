@@ -1,5 +1,13 @@
 import { LitElement, html, css } from 'lit';
-import { customElement } from 'lit/decorators.js';
+import { customElement, state } from 'lit/decorators.js';
+
+// Import all components to ensure custom elements are registered
+import './chat/krebs-chat.js';
+import './components/krebs-sidebar-nav.js';
+import './components/krebs-tools-panel.js';
+import './components/krebs-skills-panel.js';
+import './components/krebs-tool-card.js';
+import type { TabType } from './components/krebs-sidebar-nav.js';
 
 /**
  * Main Application Component
@@ -10,103 +18,26 @@ export class KrebsApp extends LitElement {
   static styles = css`
     :host {
       display: flex;
-      flex-direction: column;
       height: 100vh;
-      background-color: var(--color-bg); 
+      background-color: var(--color-bg);
       color: var(--color-text);
-    }
-
-    header {
-      background-color: var(--color-surface);
-      border-bottom: 1px solid var(--color-border);
-      padding: var(--spacing-md) var(--spacing-lg);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      box-shadow: var(--shadow-sm);
-    }
-
-    .logo {
-      font-size: var(--font-size-xl);
-      font-weight: 600;
-      color: var(--color-primary);
-      display: flex;
-      align-items: center;
-      gap: var(--spacing-sm);
-    }
-
-    .logo-icon {
-      width: 32px;
-      height: 32px;
-      background: linear-gradient(135deg, var(--color-primary), var(--color-info));
-      border-radius: var(--radius-md);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: white;
-      font-weight: bold;
-    }
-
-    .header-actions {
-      display: flex;
-      gap: var(--spacing-md);
-      align-items: center;
-    }
-
-    .status-indicator {
-      display: flex;
-      align-items: center;
-      gap: var(--spacing-xs);
-      font-size: var(--font-size-sm);
-      color: var(--color-text-secondary);
-    }
-
-    .status-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background-color: var(--color-success);
-      animation: pulse 2s ease-in-out infinite;
-    }
-
-    @keyframes pulse {
-      0%, 100% {
-        opacity: 1;
-      }
-      50% {
-        opacity: 0.5;
-      }
-    }
-
-    main {
-      display: flex;
-      flex: 1;
       overflow: hidden;
     }
 
+    .app-container {
+      display: flex;
+      width: 100%;
+      height: 100%;
+    }
+
     .sidebar {
-      width: 280px;
+      width: 260px;
       background-color: var(--color-surface);
       border-right: 1px solid var(--color-border);
       display: flex;
       flex-direction: column;
       overflow: hidden;
-    }
-
-    .sidebar-header {
-      padding: var(--spacing-md);
-      border-bottom: 1px solid var(--color-border);
-      font-weight: 600;
-      font-size: var(--font-size-sm);
-      color: var(--color-text-secondary);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-
-    .sidebar-content {
-      flex: 1;
-      overflow-y: auto;
-      padding: var(--spacing-sm);
+      flex-shrink: 0;
     }
 
     .content {
@@ -114,15 +45,32 @@ export class KrebsApp extends LitElement {
       display: flex;
       flex-direction: column;
       overflow: hidden;
+      min-height: 0;
+      background-color: var(--color-bg);
+    }
+
+    .content-panel {
+      flex: 1;
+      overflow: hidden;
+      display: none;
+    }
+
+    .content-panel.active {
+      display: flex;
+      flex-direction: column;
     }
 
     @media (max-width: 768px) {
       .sidebar {
-        display: none;
+        width: 80px;
       }
     }
   `;
 
+  @state()
+  private activeTab: TabType = 'chat';
+
+  @state()
   private connected = false;
 
   constructor() {
@@ -140,38 +88,33 @@ export class KrebsApp extends LitElement {
     this.requestUpdate();
   }
 
+  private handleTabChange(e: CustomEvent<TabType>) {
+    this.activeTab = e.detail;
+  }
+
   render() {
     return html`
-      <header>
-        <div class="logo">
-          <div class="logo-icon">K</div>
-          <span>Krebs AI</span>
-        </div>
-        <div class="header-actions">
-          <div class="status-indicator">
-            <div class="status-dot"></div>
-            <span>${this.connected ? 'Connected' : 'Disconnected'}</span>
-          </div>
-        </div>
-      </header>
-
-      <main>
+      <div class="app-container">
         <aside class="sidebar">
-          <div class="sidebar-header">Tools</div>
-          <div class="sidebar-content">
-            <krebs-tools-list></krebs-tools-list>
-          </div>
-
-          <div class="sidebar-header">Skills</div>
-          <div class="sidebar-content">
-            <krebs-skills-list></krebs-skills-list>
-          </div>
+          <krebs-sidebar-nav
+            @tab-change=${this.handleTabChange}
+          ></krebs-sidebar-nav>
         </aside>
 
         <div class="content">
-          <krebs-chat></krebs-chat>
+          <div class="content-panel ${this.activeTab === 'chat' ? 'active' : ''}">
+            <krebs-chat></krebs-chat>
+          </div>
+
+          <div class="content-panel ${this.activeTab === 'tools' ? 'active' : ''}">
+            <krebs-tools-panel></krebs-tools-panel>
+          </div>
+
+          <div class="content-panel ${this.activeTab === 'skills' ? 'active' : ''}">
+            <krebs-skills-panel></krebs-skills-panel>
+          </div>
         </div>
-      </main>
+      </div>
     `;
   }
 }
