@@ -32,7 +32,7 @@ export interface ParsedFrontmatter {
  */
 export interface SkillInstallSpec {
   /** 安装类型 */
-  kind: "brew" | "node" | "go" | "uv" | "download" | "python" | "ruby" | "cargo";
+  kind: "brew" | "node" | "go" | "uv" | "download" | "python" | "ruby" | "cargo" | "bash";
 
   /** 安装ID（可选） */
   id?: string;
@@ -88,6 +88,12 @@ export interface SkillInstallSpec {
 
   /** 下载 URL（kind=download） */
   url?: string;
+
+  /** Bash 脚本（kind=bash） */
+  bashScript?: string;
+
+  /** Bash 脚本参数（kind=bash） */
+  bashArgs?: string[];
 }
 
 /**

@@ -2,7 +2,7 @@
  * Skills 依赖安装器
  *
  * 参考 openclaw-cn-ds 实现
- * 支持：brew, node, go, uv, download, python, ruby, cargo
+ * 支持：brew, node, go, uv, download, python, ruby, cargo, bash
  */
 
 import { exec } from "node:child_process";
@@ -143,6 +143,16 @@ function buildInstallCommand(
 
     case "download":
       return { argv: null, error: "download install handled separately" };
+
+    case "bash":
+      if (!spec.bashScript) return { argv: null, error: "missing bash script" };
+      // 构建命令：bash -c "script" 或 bash script args
+      const args = spec.bashArgs || [];
+      if (args.length > 0) {
+        return { argv: ["bash", spec.bashScript, ...args] };
+      } else {
+        return { argv: ["bash", "-c", spec.bashScript] };
+      }
 
     default:
       return { argv: null, error: "unsupported installer" };
