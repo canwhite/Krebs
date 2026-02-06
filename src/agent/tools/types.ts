@@ -48,6 +48,12 @@ export interface Tool {
 
   /** 执行函数 */
   execute: (params: Record<string, unknown>) => Promise<ToolResult>;
+
+  /** 是否需要 API Key */
+  requiresApiKey?: boolean;
+
+  /** API Key 名称（用于提示用户） */
+  apiKeyName?: string;
 }
 
 /**

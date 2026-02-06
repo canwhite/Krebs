@@ -1,5 +1,6 @@
 import { LitElement, html, css } from 'lit';
-import { customElement, property } from 'lit/decorators.js';
+import { customElement, property, state } from 'lit/decorators.js';
+import { StorageManager } from '../utils/storage.js';
 
 export type ToolStatus = 'pending' | 'running' | 'completed' | 'failed';
 
@@ -130,17 +131,99 @@ export class KrebsToolCard extends LitElement {
     .expand-button:hover {
       text-decoration: underline;
     }
+
+    .api-key-section {
+      margin-top: var(--spacing-sm);
+      padding: var(--spacing-sm);
+      background-color: var(--color-warning-bg);
+      border: 1px solid var(--color-warning);
+      border-radius: var(--radius-sm);
+    }
+
+    .api-key-warning {
+      font-size: var(--font-size-xs);
+      color: var(--color-warning);
+      margin-bottom: var(--spacing-sm);
+    }
+
+    .api-key-input-wrapper {
+      display: flex;
+      gap: var(--spacing-xs);
+      align-items: center;
+    }
+
+    .api-key-input {
+      flex: 1;
+      padding: var(--spacing-xs) var(--spacing-sm);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-sm);
+      font-size: var(--font-size-xs);
+      font-family: 'Monaco', 'Menlo', monospace;
+    }
+
+    .api-key-button {
+      padding: var(--spacing-xs) var(--spacing-sm);
+      background-color: var(--color-primary);
+      color: white;
+      border: none;
+      border-radius: var(--radius-sm);
+      font-size: var(--font-size-xs);
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .api-key-button:hover {
+      background-color: var(--color-primary-hover);
+    }
+
+    .api-key-error {
+      color: var(--color-error);
+      font-size: var(--font-size-xs);
+      margin-top: var(--spacing-xs);
+    }
+
+    .api-key-success {
+      color: var(--color-success);
+      font-size: var(--font-size-xs);
+      margin-top: var(--spacing-xs);
+    }
   `;
 
   @property({ type: Boolean })
   private expanded = false;
 
+  @state()
+  private showApiKeyInput = false;
+
+  @state()
+  private apiKeyInput = '';
+
+  @state()
+  private apiKeyError = '';
+  @state()
+  private apiKeySuccess = false;
+
   render() {
+    const isConfigured = this.isApiKeyConfigured();
+
     return html`
       <div class="tool-card">
         <div class="tool-header">
           <span class="tool-name">🛠️ ${this.name}</span>
-          <span class="status-badge ${this.status}">${this.getStatusText()}</span>
+          <div style="display: flex; gap: var(--spacing-xs); align-items: center;">
+            ${this.requiresApiKey() && isConfigured
+              ? html`
+                  <span
+                    style="font-size: var(--font-size-xs); color: var(--color-success); cursor: help;"
+                    title="API Key is configured"
+                  >
+                    🔑
+                  </span>
+                `
+              : ''}
+            <span class="status-badge ${this.status}">${this.getStatusText()}</span>
+          </div>
         </div>
 
         ${Object.keys(this.args).length > 0
@@ -148,6 +231,8 @@ export class KrebsToolCard extends LitElement {
               <div class="tool-args">${JSON.stringify(this.args, null, 2)}</div>
             `
           : ''}
+
+        ${this.renderApiKeySection()}
 
         ${this.result !== undefined
           ? html`
@@ -214,6 +299,120 @@ export class KrebsToolCard extends LitElement {
     }
 
     return html`<pre>${String(this.result)}</pre>`;
+  }
+
+  private requiresApiKey(): boolean {
+    // web_search 工具需要 API key
+    return this.name === 'web_search';
+  }
+
+  private isApiKeyConfigured(): boolean {
+    return StorageManager.isToolApiKeyConfigured(this.name);
+  }
+
+  private handleApiKeySave() {
+    if (!this.apiKeyInput.trim()) {
+      this.apiKeyError = 'API Key cannot be empty';
+      return;
+    }
+
+    // Validate API key format
+    if (this.name === 'web_search' && this.apiKeyInput.length < 10) {
+      this.apiKeyError = 'API Key seems too short';
+      return;
+    }
+
+    // Save to localStorage
+    StorageManager.saveToolApiKey(this.name, this.apiKeyInput.trim());
+
+    this.apiKeySuccess = true;
+    this.apiKeyError = '';
+    this.showApiKeyInput = false;
+
+    // Clear success message after 2 seconds
+    setTimeout(() => {
+      this.apiKeySuccess = false;
+    }, 2000);
+
+    // Request update to reflect the change
+    this.requestUpdate();
+  }
+
+  private renderApiKeySection() {
+    if (!this.requiresApiKey()) {
+      return html``;
+    }
+
+    const isConfigured = this.isApiKeyConfigured();
+
+    if (isConfigured && !this.showApiKeyInput) {
+      return html``;
+    }
+
+    return html`
+      <div class="api-key-section">
+        ${!isConfigured
+          ? html`
+              <div class="api-key-warning">
+                ⚠️ This tool requires an API key to function. Please enter your API key below.
+              </div>
+            `
+          : html`
+              <div class="api-key-warning">
+                Update your API key:
+              </div>
+            `}
+        ${this.showApiKeyInput || !isConfigured
+          ? html`
+              <div class="api-key-input-wrapper">
+                <input
+                  type="password"
+                  class="api-key-input"
+                  placeholder="Enter your API key..."
+                  .value=${this.apiKeyInput}
+                  @input=${(e: Event) => {
+                    const target = e.target as HTMLInputElement;
+                    this.apiKeyInput = target.value;
+                    this.apiKeyError = '';
+                  }}
+                  @keydown=${(e: KeyboardEvent) => {
+                    if (e.key === 'Enter') {
+                      this.handleApiKeySave();
+                    }
+                  }}
+                />
+                <button class="api-key-button" @click=${() => this.handleApiKeySave()}>
+                  Save
+                </button>
+                ${isConfigured
+                  ? html`
+                      <button
+                        class="api-key-button"
+                        style="background-color: var(--color-text-secondary);"
+                        @click=${() => {
+                          this.showApiKeyInput = false;
+                          this.apiKeyInput = '';
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    `
+                  : ''}
+              </div>
+              ${this.apiKeyError
+                ? html`
+                    <div class="api-key-error">⚠️ ${this.apiKeyError}</div>
+                  `
+                : ''}
+              ${this.apiKeySuccess
+                ? html`
+                    <div class="api-key-success">✓ API Key saved successfully!</div>
+                  `
+                : ''}
+            `
+          : ''}
+      </div>
+    `;
   }
 }
 

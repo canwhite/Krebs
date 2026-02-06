@@ -6,6 +6,7 @@
  */
 
 import { createLogger } from "@/shared/logger.js";
+import { apiKeyManager } from "@/shared/api-keys.js";
 
 import type { Tool } from "./types.js";
 
@@ -30,6 +31,8 @@ type SearchResult = {
 export const webSearchTool: Tool = {
   name: "web_search",
   description: "Search the web using Brave Search API. Returns titles, URLs, and snippets for fast research. Supports up to 10 results per query.",
+  requiresApiKey: true,
+  apiKeyName: "BRAVE_API_KEY",
   inputSchema: {
     type: "object",
     properties: {
@@ -85,12 +88,15 @@ export const webSearchTool: Tool = {
       };
     }
 
-    // 获取 API Key
-    const apiKey = process.env.BRAVE_API_KEY || process.env.SEARCH_API_KEY;
+    // 获取 API Key (优先使用客户端提供的,其次使用环境变量)
+    let apiKey: string | null = apiKeyManager.getApiKey("web_search");
+    if (!apiKey) {
+      apiKey = process.env.BRAVE_API_KEY || process.env.SEARCH_API_KEY || null;
+    }
     if (!apiKey) {
       return {
         success: false,
-        error: "BRAVE_API_KEY or SEARCH_API_KEY environment variable is required",
+        error: "BRAVE_API_KEY or SEARCH_API_KEY environment variable is required, or provide it via the UI",
       };
     }
 

@@ -3,6 +3,13 @@ import { customElement, state } from 'lit/decorators.js';
 import { ref, createRef } from 'lit/directives/ref.js';
 import { KrebsMarkdown } from '../components/krebs-markdown.js';
 
+/**
+ * 生成唯一ID（兼容性更好的版本）
+ */
+function generateUniqueId(): string {
+  return `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
+
 interface Message {
   id: string;
   role: 'user' | 'assistant' | 'system';
@@ -326,7 +333,7 @@ export class KrebsChat extends LitElement {
     if (!this.input.trim() || this.isSending) return;
 
     const userMessage: Message = {
-      id: crypto.randomUUID(),
+      id: generateUniqueId(),
       role: 'user',
       content: this.input,
       timestamp: Date.now(),
@@ -355,7 +362,7 @@ export class KrebsChat extends LitElement {
       const data = await response.json();
 
       const assistantMessage: Message = {
-        id: crypto.randomUUID(),
+        id: generateUniqueId(),
         role: 'assistant',
         content: data.content || '',
         timestamp: Date.now(),
@@ -366,7 +373,7 @@ export class KrebsChat extends LitElement {
     } catch (error) {
       console.error('Failed to send message:', error);
       const errorMessage: Message = {
-        id: crypto.randomUUID(),
+        id: generateUniqueId(),
         role: 'assistant',
         content: '抱歉，发送消息时出错。请稍后重试。',
         timestamp: Date.now(),

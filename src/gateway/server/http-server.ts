@@ -11,6 +11,7 @@ import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
 import { createLogger } from "../../shared/logger.js";
+import { apiKeyManager } from "../../shared/api-keys.js";
 import type { AgentManager } from "@/agent/core/index.js";
 import type { IChatService } from "../service/chat-service.js";
 import type {
@@ -31,10 +32,10 @@ export class GatewayHttpServer {
   private readonly host: string;
 
   constructor(
-    chatService: IChatService,  // 使用 ChatService 接口
+    chatService: IChatService, // 使用 ChatService 接口
     port: number,
     host: string = "0.0.0.0",
-    agentManager?: AgentManager  // 可选的 AgentManager（用于管理接口）
+    agentManager?: AgentManager, // 可选的 AgentManager（用于管理接口）
   ) {
     this.app = express();
     this.chatService = chatService;
@@ -99,6 +100,41 @@ export class GatewayHttpServer {
       }
     });
 
+    // 接收前端发送的 API Keys
+    this.app.post("/api/tools/keys", async (req, res) => {
+      try {
+        const { keys } = req.body;
+        if (typeof keys === "object" && keys !== null) {
+          // 存储 API keys 到全局管理器
+          for (const [toolName, apiKey] of Object.entries(keys)) {
+            if (typeof apiKey === "string" && apiKey.trim().length > 0) {
+              apiKeyManager.setApiKey(toolName, apiKey.trim());
+              log.info(`API Key received for tool: ${toolName}`);
+            }
+          }
+          res.json({ success: true, message: "API keys stored successfully" });
+        } else {
+          res
+            .status(400)
+            .json({ success: false, error: "Invalid keys format" });
+        }
+      } catch (error) {
+        log.error("Store API keys error:", error);
+        res.status(500).json({ success: false, error: String(error) });
+      }
+    });
+
+    // 获取已配置的 API Keys 状态
+    this.app.get("/api/tools/keys", async (_, res) => {
+      try {
+        const configuredTools = apiKeyManager.getConfiguredTools();
+        res.json({ configuredTools });
+      } catch (error) {
+        log.error("Get API keys error:", error);
+        res.status(500).json({ error: String(error) });
+      }
+    });
+
     // 技能列表
     this.app.get("/api/skills", async (_, res) => {
       try {
@@ -130,7 +166,7 @@ export class GatewayHttpServer {
         const result = await this.chatService.process(
           agentId || "default",
           message,
-          sessionId || "default"
+          sessionId || "default",
         );
         res.json({
           content: result.response,
@@ -155,7 +191,7 @@ export class GatewayHttpServer {
           this.errorResponse(req.body?.id ?? "", {
             code: -1,
             message: String(error),
-          })
+          }),
         );
       }
     });
@@ -172,7 +208,7 @@ export class GatewayHttpServer {
           this.errorResponse(req.body?.id ?? "", {
             code: -1,
             message: String(error),
-          })
+          }),
         );
       }
     });
@@ -187,7 +223,7 @@ export class GatewayHttpServer {
           this.errorResponse("", {
             code: -1,
             message: String(error),
-          })
+          }),
         );
       }
     });
@@ -206,7 +242,7 @@ export class GatewayHttpServer {
           this.errorResponse("", {
             code: -1,
             message: String(error),
-          })
+          }),
         );
       }
     });
@@ -225,7 +261,7 @@ export class GatewayHttpServer {
     const result = await this.chatService.process(
       params.agentId,
       params.message,
-      params.sessionId
+      params.sessionId,
     );
 
     return {
@@ -275,6 +311,8 @@ export class GatewayHttpServer {
       name: tool.name,
       description: tool.description,
       category: tool.category || "general",
+      requiresApiKey: tool.requiresApiKey || false, // 从工具定义中读取
+      apiKeyName: tool.apiKeyName,
     }));
   }
 
@@ -306,10 +344,13 @@ export class GatewayHttpServer {
     return { id, result };
   }
 
-  private errorResponse(id: string, error: {
-    code: number;
-    message: string;
-  }): ResponseFrame {
+  private errorResponse(
+    id: string,
+    error: {
+      code: number;
+      message: string;
+    },
+  ): ResponseFrame {
     return { id, error };
   }
 
@@ -331,7 +372,9 @@ export class GatewayHttpServer {
           log.error(`   您可以使用以下命令查找占用端口的进程:`);
           log.error(`   lsof -i :${this.port}`);
           log.error(`   或`);
-          log.error(`   kill -9 $(lsof -t -i :${this.port})  # 终止占用端口的进程`);
+          log.error(
+            `   kill -9 $(lsof -t -i :${this.port})  # 终止占用端口的进程`,
+          );
           reject(error);
         } else {
           log.error("HTTP server error:", error);
