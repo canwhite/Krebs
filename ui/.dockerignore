@@ -1,0 +1,43 @@
+# UI Docker 构建忽略文件
+
+# 依赖
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# 构建输出
+dist/
+build/
+
+# 测试
+coverage/
+*.test.ts
+*.spec.ts
+vitest.config.ts
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# 环境变量
+.env
+.env.local
+
+# Git
+.git/
+.gitignore
+
+# 其他
+.editorconfig
+.prettierrc
+.prettierignore
+.eslintrc*
+.eslintignore
+.prettierrc.jsonc
+.prettierignore

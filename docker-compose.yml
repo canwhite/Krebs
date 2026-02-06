@@ -1,0 +1,92 @@
+# Krebs AI Agent 框架 - Docker Compose 配置
+# 用于一键启动 Gateway 后端和 UI 前端
+
+version: "3.8"
+
+services:
+  # ==========================================
+  # Gateway 服务（后端）
+  # ==========================================
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: krebs-gateway
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-3000}:3000"  # HTTP API
+      - "${WS_PORT:-3001}:3001"     # WebSocket
+    environment:
+      # 服务器配置
+      - PORT=3000
+      - HOST=0.0.0.0
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+
+      # Agent 配置
+      - AGENT_NAME=${AGENT_NAME:-krebs}
+      - AGENT_MAX_CONCURRENT=${AGENT_MAX_CONCURRENT:-3}
+      - AGENT_DEFAULT_MODEL=${AGENT_DEFAULT_MODEL:-deepseek-chat}
+      - AGENT_DEFAULT_PROVIDER=${AGENT_DEFAULT_PROVIDER:-deepseek}
+
+      # 存储配置
+      - STORAGE_DIR=/app/data
+      - MEMORY_DIR=/app/data/memory
+
+      # API Keys（敏感信息建议使用 .env 文件）
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - DEEPSEEK_BASE_URL=${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL}
+    volumes:
+      # 持久化数据目录
+      - krebs-data:/app/data
+      - krebs-workspace:/app/workspace
+    networks:
+      - krebs-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # ==========================================
+  # UI 服务（前端）
+  # ==========================================
+  ui:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile
+    container_name: krebs-ui
+    restart: unless-stopped
+    ports:
+      - "${UI_PORT:-8080}:80"
+    depends_on:
+      gateway:
+        condition: service_healthy
+    networks:
+      - krebs-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+# ==========================================
+# 数据卷
+# ==========================================
+volumes:
+  krebs-data:
+    driver: local
+  krebs-workspace:
+    driver: local
+
+# ==========================================
+# 网络
+# ==========================================
+networks:
+  krebs-network:
+    driver: bridge

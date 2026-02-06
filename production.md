@@ -545,15 +545,69 @@ npm run build
 npm start
 ```
 
+### Docker 部署 ✨ 新增
+
+Krebs 支持使用 Docker 和 Docker Compose 进行容器化部署。
+
+#### 快速启动
+
+```bash
+# 配置环境变量
+cp .env.example .env
+# 编辑 .env 文件，添加 API Key
+
+# 构建并启动所有服务
+docker compose up --build
+
+# 或者后台运行
+docker compose up --build -d
+```
+
+#### 服务说明
+
+- **Gateway 服务**（后端）
+  - 端口：3000（HTTP API）、3001（WebSocket）
+  - 功能：AI Agent 核心服务
+
+- **UI 服务**（前端）
+  - 端口：8080（nginx）
+  - 功能：Web UI 界面
+
+#### 访问服务
+
+- **Web UI**: http://localhost:8080
+- **API 文档**: http://localhost:3000/health
+- **WebSocket**: ws://localhost:3001
+
+#### 常用命令
+
+```bash
+# 停止服务
+docker compose down
+
+# 查看日志
+docker compose logs -f
+
+# 重建镜像
+docker compose build --no-cache
+
+# 进入容器
+docker compose exec gateway sh
+```
+
+详细文档请参考：[docs/DOCKER.md](docs/DOCKER.md)
+
 ### 配置说明
 
 配置通过环境变量或配置文件传递，主要配置项：
 
 - `ANTHROPIC_API_KEY`: Anthropic API Key
 - `OPENAI_API_KEY`: OpenAI API Key
+- `DEEPSEEK_API_KEY`: DeepSeek API Key
 - `STORAGE_DIR`: 会话存储目录
 - `HTTP_PORT`: HTTP 服务端口（默认 3000）
 - `WS_PORT`: WebSocket 服务端口（默认 3001）
+- `LOG_LEVEL`: 日志级别（默认 info）
 
 ---
 
@@ -820,3 +874,108 @@ const agent1Sessions = sessions.filter((s: any) =>
 ---
 
 **文档维护**: 本文档应在架构变更或模块新增时同步更新。
+
+---
+
+## Docker 部署（2026-02-06 更新）✨
+
+### 新增功能
+
+✅ **Docker 容器化支持**：
+- ✅ **Gateway 服务 Dockerfile**：
+  - 多阶段构建（构建 + 运行）
+  - 基于 Node.js 22 Alpine 镜像
+  - 非 root 用户运行（安全）
+  - 健康检查配置
+  - 数据持久化支持
+- ✅ **UI 服务 Dockerfile**：
+  - 多阶段构建（Vite 构建 + nginx 运行）
+  - nginx 反向代理配置
+  - API 请求代理到 Gateway
+  - WebSocket 代理支持
+  - 静态资源优化
+- ✅ **Docker Compose 编排**：
+  - 自动化服务编排
+  - 服务依赖管理（UI 依赖 Gateway）
+  - 健康检查和自动重启
+  - 数据卷管理
+  - 环境变量配置
+- ✅ **完整文档**：
+  - docs/DOCKER.md - 详细部署指南
+  - 快速开始指南
+  - 故障排查
+  - 生产环境建议
+
+### 架构设计
+
+```
+Docker Compose 架构
+├── Gateway 服务
+│   ├── 基于 Node.js 22 Alpine
+│   ├── 暴露端口：3000 (HTTP)、3001 (WebSocket)
+│   ├── 数据卷：krebs-data, krebs-workspace
+│   └── 健康检查：/health 端点
+│
+└── UI 服务
+    ├── 基于 nginx Alpine
+    ├── 暴露端口：8080
+    ├── 代理配置：
+    │   ├── /api/* → http://gateway:3000/api/*
+    │   └── /ws/* → http://gateway:3001/*
+    └── 静态文件：Vite 构建产物
+```
+
+### 使用方式
+
+#### 1. 本地开发
+
+```bash
+# 启动开发环境
+docker compose up
+
+# 访问服务
+open http://localhost:8080
+```
+
+#### 2. 生产部署
+
+```bash
+# 构建生产镜像
+docker compose -f docker-compose.yml build
+
+# 启动生产环境
+docker compose up -d
+
+# 查看状态
+docker compose ps
+```
+
+#### 3. 数据管理
+
+```bash
+# 备份数据
+docker run --rm -v krebs-data:/data -v $(pwd):/backup \
+  alpine tar czf /backup/krebs-data-backup.tar.gz -C /data .
+
+# 恢复数据
+docker run --rm -v krebs-data:/data -v $(pwd):/backup \
+  alpine tar xzf /backup/krebs-data-backup.tar.gz -C /data
+```
+
+### 优势
+
+- **一致性**：开发和生产环境完全一致
+- **可移植性**：可在任何支持 Docker 的平台上运行
+- **可扩展性**：易于横向扩展和负载均衡
+- **隔离性**：服务间相互隔离，提高安全性
+- **自动化**：一键启动，自动编排
+
+### 相关文件
+
+- `Dockerfile` - Gateway 服务镜像
+- `ui/Dockerfile` - UI 服务镜像
+- `ui/nginx.conf` - nginx 配置
+- `docker-compose.yml` - 服务编排
+- `.dockerignore` - 构建排除文件
+- `ui/.dockerignore` - UI 构建排除文件
+- `docs/DOCKER.md` - 详细文档
