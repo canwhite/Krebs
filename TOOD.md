@@ -1,5 +1,16 @@
-//TOOD，如果tools中有需要key的工具，就将key在item中预留出来等待我填写
+### TODO
+1.如果tools中有需要key的工具，就将key在item中预留出来等待我填写，然后先session存储
+2.手动添加skills
+3.显示chat思考的中间流程，改为ws
+4.docker启动和运行
+5.接口文档
+6.小说skills的创建
+7.pronovel创建分支，更改调用
+8.整体功能测试，image和video的创建
 
+
+
+--------------------------------------------
 llm provider写个抽象类，将和tool call耦合的部分写到那里
 DONE:技能描述中可以包含任何命令行工具的使用说明。未来的版本将支持自动安装依赖。
 
