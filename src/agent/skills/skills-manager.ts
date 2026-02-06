@@ -114,6 +114,48 @@ export class SkillsManager {
   }
 
   /**
+   * 获取启用的技能（供 Agent 使用）
+   */
+  getSkills(): Array<{ name: string; description: string; prompt?: string }> {
+    if (!this.snapshot) {
+      return [];
+    }
+
+    // 只返回启用的技能
+    const enabledSkills = this.snapshot.skills.filter(
+      (entry) => entry.enabled !== false
+    );
+
+    // 转换为 Agent 期望的格式
+    return enabledSkills.map((entry) => {
+      // 尝试从 skill 对象获取 prompt
+      // pi-coding-agent 的 Skill 对象可能包含这些字段之一
+      const prompt =
+        (entry.skill as any).prompt ||
+        (entry.skill as any).instructions ||
+        (entry.skill as any).content ||
+        (entry.skill as any).body ||
+        undefined;
+
+      // 临时日志：查看第一个技能对象的实际结构
+      if (enabledSkills.indexOf(entry) === 0) {
+        logger.debug("First skill object keys:", Object.keys(entry.skill));
+        logger.debug("Has prompt?", !!(entry.skill as any).prompt);
+        logger.debug("Has instructions?", !!(entry.skill as any).instructions);
+        logger.debug("Has content?", !!(entry.skill as any).content);
+        logger.debug("Has body?", !!(entry.skill as any).body);
+      }
+
+      return {
+        name: entry.skill.name,
+        description:
+          entry.frontmatter?.description || entry.skill.description || "",
+        prompt, // 可选的详细说明
+      };
+    });
+  }
+
+  /**
    * 根据名称获取技能
    */
   getSkillByName(name: string): SkillEntry | undefined {

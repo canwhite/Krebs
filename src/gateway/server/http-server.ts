@@ -54,7 +54,7 @@ export class GatewayHttpServer {
     // CORS
     this.app.use((_, res, next) => {
       res.setHeader("Access-Control-Allow-Origin", "*");
-      res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+      res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
       res.setHeader("Access-Control-Allow-Headers", "Content-Type");
       res.setHeader("Access-Control-Max-Age", "86400");
       next();
@@ -317,26 +317,61 @@ export class GatewayHttpServer {
   }
 
   private async handleGetSkills() {
-    // 从 SkillRegistry 获取可用技能
-    const skillRegistry = this.agentManager.getSkillRegistry();
-    const skills = skillRegistry.list();
-    return skills.map((skill: any) => ({
-      id: skill.name,
-      name: skill.name,
-      description: skill.description || "",
-      enabled: skill.enabled ?? true,
-      category: skill.category || "general",
-    }));
+    // 优先从 SkillsManager 获取技能（新系统）
+    const skillsManager = this.agentManager.getSkillsManager();
+
+    if (skillsManager) {
+      // 使用新系统 SkillsManager
+      const skillEntries = skillsManager.getAllSkills();
+      return skillEntries.map((entry: any) => {
+        // 从 metadata 中提取信息
+        const metadata = entry.metadata || {};
+        return {
+          id: entry.skill.name,
+          name: entry.skill.name,
+          description: entry.frontmatter?.description || entry.skill.description || "",
+          enabled: entry.enabled !== false, // 默认启用
+          category: metadata.category || "general",
+          emoji: metadata.emoji || "⚡",
+          tags: metadata.tags || [],
+        };
+      });
+    } else {
+      // 降级到旧系统 SkillRegistry
+      const skillRegistry = this.agentManager.getSkillRegistry();
+      const skills = skillRegistry.list();
+      return skills.map((skill: any) => ({
+        id: skill.name,
+        name: skill.name,
+        description: skill.description || "",
+        enabled: skill.enabled ?? true,
+        category: skill.category || "general",
+        emoji: "⚡",
+        tags: [],
+      }));
+    }
   }
 
   private async handleToggleSkill(skillId: string, enabled: boolean) {
-    // 注意：当前的 SkillRegistry 不支持启用/禁用功能
-    // 这里只是一个占位实现，实际功能可能需要扩展 SkillRegistry
-    const skillRegistry = this.agentManager.getSkillRegistry();
-    const skill = skillRegistry.get(skillId);
-    if (skill) {
-      // 暂时记录日志，不实际修改状态
-      log.info(`Skill ${skillId} toggle to ${enabled} (not implemented yet)`);
+    // 优先使用 SkillsManager（新系统）
+    const skillsManager = this.agentManager.getSkillsManager();
+
+    if (skillsManager) {
+      // 使用新系统
+      if (enabled) {
+        return skillsManager.enableSkill(skillId);
+      } else {
+        return skillsManager.disableSkill(skillId);
+      }
+    } else {
+      // 降级到旧系统（不支持启用/禁用）
+      const skillRegistry = this.agentManager.getSkillRegistry();
+      const skill = skillRegistry.get(skillId);
+      if (skill) {
+        log.info(`Skill ${skillId} toggle to ${enabled} (old system, not actually toggled)`);
+        return false;
+      }
+      return false;
     }
   }
 

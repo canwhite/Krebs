@@ -19,6 +19,7 @@ import type { LLMProvider } from "@/provider/index.js";
 import type { AgentDeps, Agent } from "./agent.js";
 import type { SkillRegistry } from "../skills/index.js";
 import type { Tool, ToolConfig } from "../tools/index.js";
+import type { SkillsManager } from "../skills/index.js";
 import { Agent as AgentClass } from "./agent.js";
 import { AgentOrchestrator, OrchestratorConfig } from "./orchestrator.js";
 // 直接导入 SkillRegistry 以避免循环依赖
@@ -79,8 +80,14 @@ export interface AgentManagerDeps {
 
   /**
    * 技能注册表（可选，如果不提供则创建新的）
+   * @deprecated 建议使用 skillsManager
    */
   skillRegistry?: SkillRegistry;
+
+  /**
+   * 技能管理器（新系统，可选）
+   */
+  skillsManager?: SkillsManager;
 
   /**
    * 工具列表（可选）
@@ -93,6 +100,7 @@ export class AgentManager {
   private orchestrators = new Map<string, AgentOrchestrator>();
   private deps: AgentDeps;
   private skillRegistry: SkillRegistry;
+  private skillsManager?: SkillsManager;
   private config: AgentManagerConfig;
   private tools: Tool[] = [];
   private toolConfig: ToolConfig = { enabled: true, maxIterations: 10 };
@@ -108,6 +116,9 @@ export class AgentManager {
 
     // 管理 SkillRegistry（替代全局单例）
     this.skillRegistry = deps.skillRegistry || this.createDefaultSkillRegistry();
+
+    // 管理 SkillsManager（新系统）
+    this.skillsManager = deps.skillsManager;
 
     // 管理工具
     this.tools = deps.tools || [];
@@ -145,11 +156,12 @@ export class AgentManager {
     return this.toolConfig;
   }
   createAgent(agentConfig: AgentConfig): Agent {
-    // 创建 AgentDeps，包含工具
+    // 创建 AgentDeps，包含工具和 SkillsManager
     const agentDeps: AgentDeps = {
       ...this.deps,
       tools: this.tools,
       toolConfig: this.toolConfig,
+      skillsManager: this.skillsManager, // 传递 SkillsManager
     };
 
     const agent = new AgentClass(agentConfig, agentDeps);
@@ -165,6 +177,7 @@ export class AgentManager {
     const orchestrator = new AgentOrchestrator(orchestratorConfig, {
       agent,
       skillRegistry: this.skillRegistry,
+      skillsManager: this.skillsManager, // 传递 SkillsManager
     });
 
     this.orchestrators.set(agentConfig.id, orchestrator);
@@ -217,6 +230,20 @@ export class AgentManager {
    */
   getSkillRegistry(): SkillRegistry {
     return this.skillRegistry;
+  }
+
+  /**
+   * 获取技能管理器（新系统）
+   */
+  getSkillsManager(): SkillsManager | undefined {
+    return this.skillsManager;
+  }
+
+  /**
+   * 设置技能管理器（新系统）
+   */
+  setSkillsManager(skillsManager: SkillsManager): void {
+    this.skillsManager = skillsManager;
   }
 
   /**

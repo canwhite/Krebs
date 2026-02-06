@@ -23,6 +23,7 @@ import { getBuiltinSkills } from "@/agent/skills/index.js";
 import { getBuiltinTools } from "@/agent/tools/index.js";
 import { CommandLane, setConcurrency } from "@/scheduler/lanes.js";
 import { createEnhancedSessionStorage } from "@/storage/session/index.js";
+import { createDefaultSkillsManager } from "@/agent/skills/index.js";
 import fs from "node:fs/promises";
 
 /**
@@ -130,6 +131,11 @@ async function startServer() {
   });
   logger.info("已初始化 Session Storage（增强版，支持文件锁和缓存）");
 
+  // 初始化 SkillsManager（新系统）
+  const skillsManager = createDefaultSkillsManager();
+  await skillsManager.loadSkills();
+  logger.info("已加载 SkillsManager（新系统）");
+
   // 初始化 Agent Manager（使用新的配置和依赖注入）
   const agentManager = new AgentManager(
     {
@@ -141,16 +147,17 @@ async function startServer() {
     {
       provider: provider!,
       storage: sessionStorage, // 直接注入 SessionStorage
+      skillsManager, // 注入 SkillsManager
     }
   );
 
-  // 注册内置技能（使用依赖注入）
+  // 注册内置技能（旧系统，保留向后兼容）
   const skillRegistry = agentManager.getSkillRegistry();
   const builtinSkills = getBuiltinSkills();
   for (const skill of builtinSkills) {
     skillRegistry.register(skill);
   }
-  logger.info(`已注册 ${builtinSkills.length} 个内置技能`);
+  logger.info(`已注册 ${builtinSkills.length} 个内置技能（旧系统）`);
 
   // 注册工具（Tool Calling）
   const builtinTools = getBuiltinTools();
