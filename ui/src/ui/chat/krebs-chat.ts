@@ -148,10 +148,11 @@ export class KrebsChat extends LitElement {
       font-family: inherit;
       font-size: var(--font-size-md);
       resize: none;
-      min-height: 44px;
-      max-height: 200px;
+      height: 44px;
       outline: none;
       transition: border-color 0.2s;
+      overflow-y: auto;
+      line-height: 1.5;
     }
 
     textarea:focus {
@@ -318,8 +319,6 @@ export class KrebsChat extends LitElement {
   private handleInput(e: Event) {
     const target = e.target as HTMLTextAreaElement;
     this.input = target.value;
-    target.style.height = 'auto';
-    target.style.height = Math.min(target.scrollHeight, 200) + 'px';
   }
 
   private handleKeyDown(e: KeyboardEvent) {
