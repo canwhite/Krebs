@@ -1,8 +1,10 @@
 ### TODO
 
-1.如果tools中有需要key的工具，就将key在item中预留出来等待我填写，填写完之后浏览器session存储  
-1-1 先将skills加强  
-2.手动添加skills 3.显示chat思考的中间流程，改为ws  
+~~1.如果tools中有需要key的工具，就将key在item中预留出来等待我填写，填写完之后浏览器session存储~~
+
+2.手动添加skills , 现在后台cli已经有了， TODO：UI可以自己上传zip和windows的打包结果
+
+3.显示chat思考的中间流程，改为ws  
 4.docker启动和运行  
 5.接口文档  
 6.小说skills的创建  

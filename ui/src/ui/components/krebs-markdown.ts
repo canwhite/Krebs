@@ -19,30 +19,36 @@ export class KrebsMarkdown extends LitElement {
       position: relative;
     }
 
+    .markdown-content {
+      padding-bottom: 8px;
+    }
+
     .copy-buttons {
       position: absolute;
-      bottom: 8px;
-      right: 8px;
+      bottom: -40px;
+      right: 0;
       display: flex;
       gap: 4px;
-      opacity: 0;
-      transition: opacity 0.2s ease;
+      opacity: 0.3;
+      transition: opacity 0.2s ease, bottom 0.2s ease;
       z-index: 10;
     }
 
     .markdown-wrapper:hover .copy-buttons {
       opacity: 1;
+      bottom: 8px;
     }
 
     .copy-btn {
       padding: 4px 8px;
       font-size: 12px;
-      background-color: rgba(255, 255, 255, 0.85);
+      background-color: rgba(255, 255, 255, 0.6);
       backdrop-filter: blur(4px);
       border: 1px solid rgba(0, 0, 0, 0.1);
       border-radius: 4px;
       cursor: pointer;
       color: var(--color-text);
+      opacity: 0.7;
       transition: all 0.2s ease;
       display: flex;
       align-items: center;
@@ -55,6 +61,7 @@ export class KrebsMarkdown extends LitElement {
       background-color: var(--color-primary);
       color: white;
       border-color: var(--color-primary);
+      opacity: 1;
     }
 
     .copy-btn.copied {
@@ -230,23 +237,19 @@ export class KrebsMarkdown extends LitElement {
     }
 
     :host([is-user="true"]) .copy-btn {
-      background-color: rgba(255, 255, 255, 0.9);
-      border-color: rgba(255, 255, 255, 0.5);
+      background-color: rgba(255, 255, 255, 0.6);
+      border-color: rgba(255, 255, 255, 0.3);
       color: #0066cc;
+      opacity: 0.7;
+      backdrop-filter: blur(4px);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
     }
 
     :host([is-user="true"]) .copy-btn:hover {
       background-color: #ffffff;
       color: #0066cc;
       border-color: #ffffff;
-    }
-
-    :host([is-user="true"]) .copy-btn {
-      background-color: rgba(255, 255, 255, 0.9);
-      backdrop-filter: blur(4px);
-      border: 1px solid rgba(255, 255, 255, 0.3);
-      color: #0066cc;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+      opacity: 1;
     }
 
     /* Responsive */
@@ -295,6 +298,7 @@ export class KrebsMarkdown extends LitElement {
 
     return html`
       <div class="markdown-wrapper">
+        <div class="markdown-content" .innerHTML=${renderedHtml}></div>
         <div class="copy-buttons">
           <button
             class="copy-btn ${this.copyTextState === 'copied' ? 'copied' : ''}"
@@ -317,20 +321,17 @@ export class KrebsMarkdown extends LitElement {
             <span>${this.copyMarkdownState === 'copied' ? '已复制' : '复制 MD'}</span>
           </button>
         </div>
-        <div class="markdown-content" .innerHTML=${renderedHtml}></div>
       </div>
     `;
   }
 
   private renderMarkdown(): string {
-    // Configure marked options
-    marked.setOptions({
+    // Render markdown synchronously
+    const rendered = marked(this.content, {
       breaks: true, // Convert \n to <br>
       gfm: true, // GitHub Flavored Markdown
-    });
-
-    // Render markdown
-    const rendered = marked.parse(this.content);
+      async: false // Force synchronous rendering
+    }) as string;
 
     // Sanitize HTML to prevent XSS
     return DOMPurify.sanitize(rendered);
