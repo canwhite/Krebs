@@ -57,18 +57,46 @@ export class SkillsManager {
     try {
       logger.info("Loading skills...");
 
-      // 从 Bundled Skills 目录加载
-      const entries = this.loader.loadFromDir(
-        this.config.bundledSkillsDir,
-        "bundled"
-      );
+      // 收集所有技能目录（按优先级从低到高）
+      const dirs: Array<{ dir: string; source: string }> = [];
+
+      // Extra Skills (最低优先级)
+      if (this.config.extraSkillsDirs) {
+        for (const dir of this.config.extraSkillsDirs) {
+          dirs.push({ dir, source: "extra" });
+        }
+      }
+
+      // Bundled Skills
+      dirs.push({ dir: this.config.bundledSkillsDir, source: "bundled" });
+
+      // Managed/local Skills
+      if (this.config.localSkillsDir) {
+        dirs.push({ dir: this.config.localSkillsDir, source: "managed" });
+      } else {
+        // 默认 managed 目录
+        const defaultManagedDir = path.join(process.cwd(), "skills", "managed");
+        dirs.push({ dir: defaultManagedDir, source: "managed" });
+      }
+
+      // Workspace Skills (最高优先级)
+      if (this.config.workspaceSkillsDir) {
+        dirs.push({ dir: this.config.workspaceSkillsDir, source: "workspace" });
+      } else {
+        // 默认 workspace 目录
+        const defaultWorkspaceDir = path.join(process.cwd(), "workspace", "skills");
+        dirs.push({ dir: defaultWorkspaceDir, source: "workspace" });
+      }
+
+      // 从所有目录加载（后加载的会覆盖同名的先加载技能）
+      const entries = this.loader.loadFromDirs(dirs);
 
       // 构建快照
       this.version++;
       this.snapshot = this.loader.buildSnapshot(entries, this.version);
 
       logger.info(
-        `Loaded ${this.snapshot.count} skills (version ${this.snapshot.version})`
+        `Loaded ${this.snapshot.count} skills from ${dirs.length} directories (version ${this.snapshot.version})`
       );
     } catch (error) {
       logger.error("Failed to load skills:", error);

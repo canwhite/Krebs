@@ -7,6 +7,7 @@
 import { logger } from "@/shared/logger.js";
 
 import { handleSkillsCommand } from "./commands/skills.js";
+import { executeSkillsValidateCommand } from "./commands/skills-validate.js";
 
 /**
  * 执行CLI命令
@@ -21,6 +22,9 @@ export async function executeCliCommand(args: string[]): Promise<boolean> {
     switch (command) {
       case "skills":
         return await handleSkillsCommand(subArgs);
+
+      case "validate:skills":
+        return await executeSkillsValidateCommand(subArgs);
 
       case "help":
       case "--help":
@@ -56,6 +60,7 @@ krebs CN - 中文版 AI Agent 框架 v1.0.0
 
 命令:
   skills           Skills 管理
+    validate:skills  验证 skills 格式
     install        安装技能依赖
     list           列出所有技能
     status         查看技能状态
@@ -64,6 +69,8 @@ krebs CN - 中文版 AI Agent 框架 v1.0.0
   version, -v      显示版本信息
 
 示例:
+  krebs validate:skills              验证 skills/bundled 目录
+  krebs validate:skills skills/custom  验证自定义目录
   krebs skills install test-install    安装单个技能的依赖
   krebs skills install --all          安装所有技能的依赖
   krebs skills install --dry-run      预览将要安装的内容

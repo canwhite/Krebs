@@ -136,6 +136,14 @@ async function startServer() {
   await skillsManager.loadSkills();
   logger.info("已加载 SkillsManager（新系统）");
 
+  // 启用热加载：监听 skills 目录变化，自动重新加载
+  try {
+    await skillsManager.enableHotReload();
+    logger.info("已启用 SkillsManager 热加载 - 修改 skill 文件后将自动生效");
+  } catch (error) {
+    logger.warn("热加载启用失败，将需要手动重启服务器以加载 skills:", error);
+  }
+
   // 初始化 Agent Manager（使用新的配置和依赖注入）
   const agentManager = new AgentManager(
     {

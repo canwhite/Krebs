@@ -132,9 +132,24 @@ interface ISessionStorage {
 
 #### Skills (`src/agent/skills/`)
 
-- **SkillRegistry**：技能注册表（移除全局单例）
-- **内置技能**：总结、翻译、代码解释等
-- **可扩展**：支持自定义技能
+- **SkillsManager** 🆕：技能管理器（Facade 模式）
+  - 多目录加载（Extra、Bundled、Managed、Workspace）
+  - 技能安装和状态检查
+  - Hot Reload 支持
+- **SkillsLoader** 🆕：技能加载器
+  - 从多个目录加载技能
+  - 优先级合并（高优先级覆盖低优先级）
+  - 解析 frontmatter 和 install specs
+- **SkillInstaller** 🆕：技能安装器
+  - 支持 8 种安装类型（brew、node、go、uv、download、python、ruby、cargo、bash）
+  - 自动检测已安装依赖
+  - Dry-run 模式预览
+- **CLI 命令** 🆕：
+  - `skills create` - 创建新技能目录
+  - `skills add` - 添加技能（目录、文件、URL）
+  - `skills remove` - 移除技能
+  - `skills package` - 打包技能
+  - `skills list/status/install` - 查看和安装技能
 
 ### 3. Provider 层 (`src/provider/`)
 
@@ -251,7 +266,27 @@ krebs -v             # 同上
 #### Skills 命令
 
 ```bash
+# ========== 技能管理 ==========
+
+# 创建新技能
+krebs skills create <name> [选项]
+
+# 添加技能（从目录、.skill.gz 或 URL）
+krebs skills add <source> [选项]
+
+# 移除技能
+krebs skills remove <name> [选项]
+
+# 打包技能为 .skill.gz
+krebs skills package <path>
+
+# ========== 技能查看和安装 ==========
+
 # 列出所有技能
+# 验证 skills 格式（新增）
+krebs validate:skills                 # 验证 skills/bundled 目录
+krebs validate:skills <custom-dir>   # 验证自定义目录
+
 krebs skills list
 
 # 仅列出有安装规范的技能
@@ -278,6 +313,45 @@ krebs skills install <技能名> --force
 
 ### 命令示例
 
+#### 技能管理示例
+
+```bash
+# 创建新技能（带示例文件）
+krebs skills create my-skill --resources scripts,references --examples
+
+# 从本地目录添加技能
+krebs skills add ./my-skill
+
+# 从 .skill.gz 文件添加技能
+krebs skills add ./my-skill.skill.gz
+
+# 从 URL 下载并添加技能
+krebs skills add https://example.com/skills/my-skill.skill.gz
+
+# 添加到 workspace 目录
+krebs skills add ./my-skill --target=workspace
+
+# 添加并自动安装依赖
+krebs skills add ./my-skill --install
+
+# 强制覆盖已存在的技能
+krebs skills add ./my-skill --force
+
+# 移除技能（带确认提示）
+krebs skills remove my-skill
+
+# 强制移除技能（跳过确认）
+krebs skills remove my-skill --force
+
+# 从特定目录移除技能
+krebs skills remove my-skill --target=managed
+
+# 打包技能
+krebs skills package skills/bundled/my-skill
+```
+
+#### 技能安装和查看示例
+
 ```bash
 # 查看 test-install 技能的状态
 krebs skills status test-install
@@ -297,13 +371,43 @@ krebs skills list --install
 
 ### 命令选项说明
 
-| 选项 | 说明 | 适用命令 |
-|------|------|----------|
-| `--all` | 安装所有技能的依赖 | install |
-| `--check` | 仅检查安装状态，不实际安装 | install |
-| `--dry-run` | 预览将要执行的操作 | install |
-| `--force` | 强制重新安装 | install |
-| `--install` | 仅列出有安装规范的技能 | list |
+#### Skills Add 选项
+
+| 选项 | 说明 |
+|------|------|
+| `--target=<dir>` | 目标目录：`managed` 或 `workspace`（默认：managed）|
+| `--install` | 添加后自动安装依赖 |
+| `--force` | 强制覆盖已存在的技能 |
+
+#### Skills Remove 选项
+
+| 选项 | 说明 |
+|------|------|
+| `--target=<dir>` | 目标目录：`managed` 或 `workspace`（默认：自动检测）|
+| `--force` | 跳过确认提示 |
+
+#### Skills Create 选项
+
+| 选项 | 说明 |
+|------|------|
+| `--path=<dir>` | 输出目录（默认：skills/bundled/）|
+| `--resources=<list>` | 逗号分隔的资源列表：scripts,references,assets |
+| `--examples` | 在资源目录中创建示例文件 |
+
+#### Skills Install 选项
+
+| 选项 | 说明 |
+|------|------|
+| `--all` | 安装所有技能的依赖 |
+| `--check` | 仅检查安装状态，不实际安装 |
+| `--dry-run` | 预览将要执行的操作 |
+| `--force` | 强制重新安装 |
+
+#### Skills List 选项
+
+| 选项 | 说明 |
+|------|------|
+| `--install` | 仅列出有安装规范的技能 |
 
 ---
 
@@ -628,8 +732,8 @@ krebs/
 - ✅ **多 Provider 支持** - DeepSeek、Anthropic、OpenAI
 - ✅ **Markdown 存储** - 会话和文档管理（带 Frontmatter）
 - ✅ **工具系统** - 可扩展的工具框架
-- ✅ **技能系统** - 触发式技能系统
-- ✅ **依赖自动安装** 🆕 - Skills 依赖自动安装（npm、brew、go、uv、download）
+- ✅ **Skills 管理系统** 🆕 - 完整的技能添加、移除、查看和管理
+- ✅ **依赖自动安装** 🆕 - Skills 依赖自动安装（8 种类型：brew、node、go、uv、download、python、ruby、cargo）
 - ✅ **CLI 命令** 🆕 - 完整的命令行界面
 - ✅ **Lane 并发控制** - 命令队列和限流
 - ✅ **HTTP + WebSocket** - 双协议支持

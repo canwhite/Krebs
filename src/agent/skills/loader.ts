@@ -17,6 +17,7 @@ import {
 import { parse } from "yaml";
 
 import { createLogger } from "@/shared/logger.js";
+import { validateSkillFile } from "./validator.js";
 
 import type {
   KrebsSkillMetadata,
@@ -53,10 +54,48 @@ export class SkillsLoader {
         }
       }
 
-      // 构建 SkillEntry[]
-      const entries: SkillEntry[] = result.skills.map((skill) => this.buildSkillEntry(skill));
+      // 构建 SkillEntry[]，同时验证格式（非严格模式）
+      const entries: SkillEntry[] = [];
+      const warnings: string[] = [];
 
-      logger.info(`Loaded ${entries.length} skills from ${dir}`);
+      for (const skill of result.skills) {
+        // 验证每个 skill 文件格式
+        const validation = validateSkillFile(skill.filePath);
+
+        if (!validation.valid) {
+          // 严格模式下跳过，非严格模式下仅警告
+          if (process.env.SKILLS_VALIDATOR_STRICT === "true") {
+            logger.warn(`[STRICT] 跳过格式错误的 skill: ${skill.name}`);
+            for (const error of validation.errors) {
+              logger.warn(`  - ${error}`);
+            }
+          } else {
+            // 非严格模式：记录警告但仍然加载
+            for (const error of validation.errors) {
+              logger.warn(`[validation] ${skill.name}: ${error}`);
+            }
+            if (validation.warnings.length > 0) {
+              for (const warning of validation.warnings) {
+                logger.warn(`[validation] ${skill.name}: ${warning}`);
+              }
+            }
+            entries.push(this.buildSkillEntry(skill));
+            warnings.push(skill.name);
+          }
+        } else {
+          // 格式正确，添加到列表
+          if (validation.warnings.length > 0) {
+            warnings.push(skill.name);
+          }
+          entries.push(this.buildSkillEntry(skill));
+        }
+      }
+
+      if (warnings.length > 0) {
+        logger.warn(`${warnings.length} 个 skills 有格式警告: ${warnings.join(", ")}`);
+      }
+
+      logger.info(`成功加载 ${entries.length} skills from ${dir}`);
 
       return entries;
     } catch (error) {

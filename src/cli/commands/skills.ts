@@ -4,6 +4,8 @@
 
 import { createDefaultSkillsManager } from "@/agent/skills/index.js";
 import { logger } from "@/shared/logger.js";
+import { handleAddCommand } from "./skills-add.js";
+import { handleRemoveCommand } from "./skills-remove.js";
 
 /**
  * 处理 skills 命令
@@ -12,6 +14,12 @@ export async function handleSkillsCommand(args: string[]): Promise<boolean> {
   const [subCommand, ...subArgs] = args;
 
   switch (subCommand) {
+    case "add":
+      return await handleAddCommand(subArgs);
+
+    case "remove":
+      return await handleRemoveCommand(subArgs);
+
     case "install":
       return await handleInstallCommand(subArgs);
 
@@ -20,6 +28,16 @@ export async function handleSkillsCommand(args: string[]): Promise<boolean> {
 
     case "status":
       return await handleStatusCommand(subArgs);
+
+    case "create":
+      // create 命令需要特殊处理（不是通过 skills.ts 路由）
+      const { handleCreateCommand } = await import("./skills-create.js");
+      return await handleCreateCommand(subArgs);
+
+    case "package":
+      // package 命令需要特殊处理
+      const { handlePackageCommand } = await import("./skills-package.js");
+      return await handlePackageCommand(subArgs);
 
     default:
       logger.error(`未知命令: skills ${subCommand}`);
@@ -226,24 +244,46 @@ function printSkillsHelp() {
 用法: krebs skills <命令> [选项]
 
 命令:
-  install <技能名>    安装技能依赖
-  list              列出所有技能
-  status <技能名>    查看技能安装状态
+  add <source>       添加技能（目录、.skill.gz 或 URL）
+  remove <skill-name> 移除技能
+  install <skill>     安装技能依赖
+  list               列出所有技能
+  status <skill>      查看技能安装状态
+  create <name>       创建新技能目录结构
+  package <path>      打包技能为 .skill.gz
 
 选项:
   --all             安装所有技能的依赖（仅用于install）
   --check           仅检查安装状态，不实际安装
   --dry-run         预览将要执行的操作
-  --force           强制重新安装
+  --force           强制执行（覆盖或跳过确认）
   --install         仅列出有安装规范的技能（仅用于list）
+  --target=<dir>    目标目录：managed 或 workspace（用于add/remove）
 
 示例:
+  # 添加技能
+  krebs skills add ./my-skill
+  krebs skills add https://example.com/skill.skill.gz
+  krebs skills add ./my-skill --target=workspace --install
+
+  # 移除技能
+  krebs skills remove my-skill
+  krebs skills remove my-skill --force
+
+  # 安装依赖
   krebs skills install test-install
   krebs skills install --all
-  krebs skills install --dry-run
-  krebs skills install --check
+
+  # 列出技能
+  krebs skills list
   krebs skills list --install
+
+  # 查看状态
   krebs skills status test-install
+
+  # 创建和打包
+  krebs skills create my-new-skill
+  krebs skills package skills/bundled/my-skill
 `);
 }
 
