@@ -1,19 +1,17 @@
 ---
 name: test-skill
-description: "测试技能：用于验证技能加载是否正常工作"
-metadata: '{"krebs":{"emoji":"🧪","category":"Test","tags":["test","example"]}}'
+description: A test skill for upload functionality
+category: testing
+emoji: 🧪
+tags:
+  - test
+  - upload
 ---
 
 # Test Skill
 
-这是一个测试技能，用于验证技能系统是否正常工作。
+This is a test skill to verify the upload functionality works correctly.
 
-## 功能
+## Usage
 
-- 测试技能加载
-- 验证格式是否正确
-- 检查热加载功能
-
-## 使用方法
-
-在聊天中测试此技能是否被正确识别。
+You can use this skill to test the upload feature.

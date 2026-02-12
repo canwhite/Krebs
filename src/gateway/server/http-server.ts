@@ -10,6 +10,10 @@
 import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
+import fs from "node:fs/promises";
+import { exec } from "node:child_process";
+import { promisify } from "node:util";
+import multer from "multer";
 import { createLogger } from "../../shared/logger.js";
 import { apiKeyManager } from "../../shared/api-keys.js";
 import type { AgentManager } from "@/agent/core/index.js";
@@ -21,6 +25,8 @@ import type {
   AgentCreateParams,
   SessionListParams,
 } from "../protocol/frames.js";
+
+const execAsync = promisify(exec);
 
 const log = createLogger("Gateway:HTTP");
 
@@ -55,7 +61,7 @@ export class GatewayHttpServer {
     this.app.use((_, res, next) => {
       res.setHeader("Access-Control-Allow-Origin", "*");
       res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
-      res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
       res.setHeader("Access-Control-Max-Age", "86400");
       next();
     });
@@ -170,6 +176,22 @@ export class GatewayHttpServer {
         res.status(500).json({ error: String(error) });
       }
     });
+
+    // 技能上传 - 接收zip压缩包
+    this.app.post("/api/skills/upload",
+      multer({
+        dest: path.join(process.cwd(), "temp"),
+        limits: { fileSize: 50 * 1024 * 1024 } // 50MB
+      }).single("skill"),
+      async (req, res) => {
+        try {
+          await this.handleSkillUpload(req, res);
+        } catch (error) {
+          log.error("Skill upload error:", error);
+          res.status(500).json({ error: String(error) });
+        }
+      }
+    );
 
     // 聊天接口 (简化版，直接接受消息)
     this.app.post("/api/chat", async (req, res) => {
@@ -437,5 +459,227 @@ export class GatewayHttpServer {
   async stop(): Promise<void> {
     // Express 不提供直接的关闭方法，这里简化处理
     log.info("HTTP server stopped");
+  }
+
+  /**
+   * 处理技能上传
+   */
+  private async handleSkillUpload(req: any, res: any): Promise<void> {
+    const file = req.file;
+    if (!file) {
+      res.status(400).json({ error: "No file uploaded" });
+      return;
+    }
+
+    log.info(`Received skill upload: ${file.originalname}, size: ${file.size}`);
+
+    try {
+      // 确定目标目录 (bundled skills)
+      const targetBaseDir = path.join(process.cwd(), "skills", "bundled");
+
+      let tempDir: string | null = null;
+      let skillName: string | null = null;
+      let extractDir: string | null = null; // 移到外层作用域
+
+      // 判断文件类型并解压
+      if (file.originalname.endsWith(".tar.gz") || file.originalname.endsWith(".tgz") || file.originalname.endsWith(".zip")) {
+        // tar.gz 或 zip 文件
+        extractDir = path.join(targetBaseDir, "temp_extract_" + Date.now());
+        await fs.mkdir(extractDir, { recursive: true });
+
+        if (file.originalname.endsWith(".zip")) {
+          // 使用 unzip 解压
+          try {
+            const { stderr } = await execAsync(`unzip -o "${file.path}" -d "${extractDir}"`);
+            if (stderr) {
+              log.warn(`Unzip extraction warning: ${stderr}`);
+            }
+            log.info(`Extracted zip to ${extractDir}`);
+          } catch (error: any) {
+            await fs.rm(file.path, { force: true });
+            throw new Error(`Failed to extract zip file: ${error.message || error}`);
+          }
+        } else {
+          // 使用 tar 解压
+          try {
+            const { stderr } = await execAsync(`tar -xzf "${file.path}" -C "${extractDir}"`);
+            if (stderr && !stderr.includes("Removing leading")) {
+              log.warn(`Tar extraction warning: ${stderr}`);
+            }
+            log.info(`Extracted tar.gz to ${extractDir}`);
+          } catch (error: any) {
+            await fs.rm(file.path, { force: true });
+            throw new Error(`Failed to extract tar.gz file: ${error.message || error}`);
+          }
+        }
+
+        // 查找技能目录 (包含 SKILL.md 的目录)
+        // 递归查找，支持嵌套目录结构
+        async function findSkillDir(dir: string): Promise<string | null> {
+          const entries = await fs.readdir(dir, { withFileTypes: true });
+
+          // 检查当前目录是否包含 SKILL.md
+          const skillMdPath = path.join(dir, "SKILL.md");
+          try {
+            await fs.access(skillMdPath);
+            return dir;
+          } catch {
+            // 不在当前目录，继续查找子目录
+          }
+
+          // 递归搜索子目录
+          for (const entry of entries) {
+            if (entry.isDirectory()) {
+              const subDir = path.join(dir, entry.name);
+              const result = await findSkillDir(subDir);
+              if (result) {
+                return result;
+              }
+            }
+          }
+
+          return null;
+        }
+
+        const skillDir = await findSkillDir(extractDir);
+
+        if (!skillDir) {
+          await fs.rm(file.path, { force: true });
+          await fs.rm(extractDir, { recursive: true, force: true });
+          throw new Error("No valid skill directory found (missing SKILL.md)");
+        }
+
+        tempDir = skillDir;
+      } else {
+        throw new Error("Unsupported file format. Please upload .zip or .tar.gz file");
+      }
+
+      // 删除临时上传文件
+      await fs.rm(file.path, { force: true });
+
+      // 验证技能
+      const validation = await this.validateSkillDir(tempDir);
+      if (!validation.valid) {
+        // 清理临时目录 (只删除extractDir及其子目录)
+        await fs.rm(extractDir, { recursive: true, force: true });
+        res.status(400).json({
+          error: "Skill validation failed",
+          details: validation.errors
+        });
+        return;
+      }
+
+      // 获取技能名称
+      skillName = await this.getSkillName(tempDir);
+      if (!skillName) {
+        await fs.rm(extractDir, { recursive: true, force: true });
+        res.status(400).json({ error: "Cannot determine skill name" });
+        return;
+      }
+
+      // 确定最终目标路径
+      const finalTargetDir = path.join(targetBaseDir, skillName);
+
+      // 检查是否已存在
+      const exists = await fs.access(finalTargetDir).then(() => true).catch(() => false);
+      if (exists) {
+        await fs.rm(extractDir, { recursive: true, force: true });
+        res.status(409).json({ error: `Skill '${skillName}' already exists` });
+        return;
+      }
+
+      // 移动技能到目标位置
+      await fs.rename(tempDir, finalTargetDir);
+
+      // 清理临时目录
+      await fs.rm(extractDir, { recursive: true, force: true }).catch(() => {});
+
+      // 重新加载技能
+      const skillsManager = this.agentManager.getSkillsManager();
+      if (skillsManager) {
+        await skillsManager.reloadSkills();
+        log.info(`Reloaded skills after upload`);
+      }
+
+      log.info(`✅ Skill '${skillName}' uploaded successfully`);
+
+      res.json({
+        success: true,
+        message: `Skill '${skillName}' uploaded successfully`,
+        skillName,
+        path: finalTargetDir
+      });
+    } catch (error: any) {
+      log.error("Skill upload failed:", error);
+      res.status(500).json({
+        error: "Failed to upload skill",
+        details: error.message || String(error)
+      });
+    }
+  }
+
+  /**
+   * 验证技能目录
+   */
+  private async validateSkillDir(skillDir: string): Promise<{ valid: boolean; errors: string[] }> {
+    const errors: string[] = [];
+
+    try {
+      const skillMdPath = path.join(skillDir, "SKILL.md");
+      await fs.access(skillMdPath);
+
+      // 读取并解析 frontmatter
+      const content = await fs.readFile(skillMdPath, "utf-8");
+      const frontmatterMatch = content.match(/^---\s*\n([\s\S]*?)\n---/);
+
+      if (!frontmatterMatch) {
+        errors.push("Missing YAML frontmatter");
+      } else {
+        const frontmatter = frontmatterMatch[1];
+
+        if (!frontmatter.includes("name:")) {
+          errors.push("Missing 'name' field in frontmatter");
+        }
+
+        if (!frontmatter.includes("description:")) {
+          errors.push("Missing 'description' field in frontmatter");
+        }
+      }
+    } catch (error: any) {
+      errors.push(`Validation error: ${error.message || error}`);
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors,
+    };
+  }
+
+  /**
+   * Get skill name from SKILL.md
+   */
+  private async getSkillName(skillDir: string): Promise<string | null> {
+    try {
+      const skillMdPath = path.join(skillDir, "SKILL.md");
+      const content = await fs.readFile(skillMdPath, "utf-8");
+      const nameMatch = content.match(/^name:\s*(.+)$/m);
+
+      if (!nameMatch) {
+        return null;
+      }
+
+      // Remove quotes (single or double) and extra whitespace
+      let name = nameMatch[1].trim();
+
+      // Remove outer quotes if present
+      if ((name.startsWith('"') && name.endsWith('"')) ||
+          (name.startsWith("'") && name.endsWith("'"))) {
+        name = name.slice(1, -1);
+      }
+
+      return name;
+    } catch {
+      return null;
+    }
   }
 }
