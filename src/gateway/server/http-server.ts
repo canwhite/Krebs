@@ -135,6 +135,18 @@ export class GatewayHttpServer {
       }
     });
 
+    // 获取工具状态
+    this.app.get("/api/tools/status", async (_, res) => {
+      try {
+        const toolRegistry = this.agentManager.getToolRegistry();
+        const toolsStatus = await toolRegistry.getToolsStatus();
+        res.json({ tools: toolsStatus });
+      } catch (error) {
+        log.error("Get tools status error:", error);
+        res.status(500).json({ error: String(error) });
+      }
+    });
+
     // 技能列表
     this.app.get("/api/skills", async (_, res) => {
       try {

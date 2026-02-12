@@ -6,6 +6,8 @@
 
 import { createLogger } from "@/shared/logger.js";
 import type { Tool, ToolCall, ToolResult } from "./types.js";
+import type { ToolStatusInfo } from "./status.js";
+import { checkToolStatus } from "./status.js";
 
 const logger = createLogger("ToolRegistry");
 
@@ -72,7 +74,63 @@ export class ToolRegistry {
   }
 
   /**
+   * 获取所有工具的状态
+   */
+  async getToolsStatus(): Promise<ToolStatusInfo[]> {
+    const statusList: ToolStatusInfo[] = [];
+
+    for (const tool of this.tools.values()) {
+      // 如果工具定义了自定义检查函数，使用它
+      if (tool.checkConfig) {
+        const status = await tool.checkConfig();
+        statusList.push(status);
+      } else {
+        // 否则使用默认检查逻辑（基于 requiresApiKey 和 apiKeyName）
+        const status = checkToolStatus(
+          tool.name,
+          tool.requiresApiKey,
+          tool.apiKeyName
+        );
+        statusList.push(status);
+      }
+    }
+
+    return statusList;
+  }
+
+  /**
+   * 获取单个工具的状态
+   */
+  async getToolStatus(name: string): Promise<ToolStatusInfo | null> {
+    const tool = this.get(name);
+    if (!tool) {
+      return null;
+    }
+
+    if (tool.checkConfig) {
+      return await tool.checkConfig();
+    }
+
+    return checkToolStatus(name, tool.requiresApiKey, tool.apiKeyName);
+  }
+
+  /**
+   * 获取可调用的工具列表
+   * （过滤掉不可用的工具）
+   */
+  async getCallableTools(): Promise<Tool[]> {
+    const statusList = await this.getToolsStatus();
+    const callableNames = new Set(
+      statusList.filter((s) => s.isCallable).map((s) => s.name)
+    );
+
+    return this.getAll().filter((tool) => callableNames.has(tool.name));
+  }
+
+  /**
    * 执行工具调用
+   *
+   * 如果工具缺少必要配置，返回特殊结果而不是抛出错误
    */
   async execute(toolCall: ToolCall): Promise<ToolResult> {
     const tool = this.get(toolCall.name);
@@ -82,6 +140,24 @@ export class ToolRegistry {
       return {
         success: false,
         error: `Tool not found: ${toolCall.name}`,
+      };
+    }
+
+    // 检查工具状态（自动跳过不可用的工具）
+    let status: ToolStatusInfo | null = null;
+    if (tool.checkConfig) {
+      status = await tool.checkConfig();
+    } else if (tool.requiresApiKey) {
+      status = checkToolStatus(tool.name, tool.requiresApiKey, tool.apiKeyName);
+    }
+
+    if (status && !status.isCallable) {
+      logger.warn(`Tool ${toolCall.name} is not callable: ${status.message}`);
+
+      // 返回特殊的"跳过"结果，而不是错误
+      return {
+        success: false,
+        error: `Tool is not available: ${status.message}`,
       };
     }
 
@@ -109,6 +185,8 @@ export class ToolRegistry {
 
   /**
    * 批量执行工具调用
+   *
+   * 只执行可用的工具，跳过不可用的工具
    */
   async executeAll(toolCalls: ToolCall[]): Promise<ToolResult[]> {
     const results: ToolResult[] = [];

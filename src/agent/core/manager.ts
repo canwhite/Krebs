@@ -20,10 +20,12 @@ import type { AgentDeps, Agent } from "./agent.js";
 import type { SkillRegistry } from "../skills/index.js";
 import type { Tool, ToolConfig } from "../tools/index.js";
 import type { SkillsManager } from "../skills/index.js";
+import type { ToolRegistry } from "../tools/index.js";
 import { Agent as AgentClass } from "./agent.js";
 import { AgentOrchestrator, OrchestratorConfig } from "./orchestrator.js";
-// 直接导入 SkillRegistry 以避免循环依赖
+// 直接导入以避免循环依赖
 import { SkillRegistry as SkillRegistryClass } from "../skills/base.js";
+import { createToolRegistry } from "../tools/index.js";
 
 /**
  * AgentManager 配置
@@ -104,6 +106,7 @@ export class AgentManager {
   private config: AgentManagerConfig;
   private tools: Tool[] = [];
   private toolConfig: ToolConfig = { enabled: true, maxIterations: 10 };
+  private toolRegistry: ToolRegistry;
 
   constructor(config: AgentManagerConfig, deps: AgentManagerDeps) {
     this.config = config;
@@ -120,8 +123,14 @@ export class AgentManager {
     // 管理 SkillsManager（新系统）
     this.skillsManager = deps.skillsManager;
 
+    // 管理工具注册表
+    this.toolRegistry = createToolRegistry();
+
     // 管理工具
     this.tools = deps.tools || [];
+    if (this.tools.length > 0) {
+      this.toolRegistry.registerAll(this.tools);
+    }
     if (config.toolConfig) {
       this.toolConfig = { ...this.toolConfig, ...config.toolConfig };
     }
@@ -132,6 +141,8 @@ export class AgentManager {
    */
   registerTools(tools: Tool[]): void {
     this.tools = [...this.tools, ...tools];
+    // 同时注册到工具注册表
+    this.toolRegistry.registerAll(tools);
     console.log(`[AgentManager] Registered ${tools.length} tools (total: ${this.tools.length})`);
   }
 
@@ -244,6 +255,13 @@ export class AgentManager {
    */
   setSkillsManager(skillsManager: SkillsManager): void {
     this.skillsManager = skillsManager;
+  }
+
+  /**
+   * 获取工具注册表
+   */
+  getToolRegistry(): ToolRegistry {
+    return this.toolRegistry;
   }
 
   /**

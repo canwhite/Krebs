@@ -33,6 +33,8 @@ export interface ToolParameterSchema {
   enum?: unknown[];
 }
 
+import type { ToolConfigChecker } from "./status.js";
+
 /**
  * 工具定义
  */
@@ -54,6 +56,9 @@ export interface Tool {
 
   /** API Key 名称（用于提示用户） */
   apiKeyName?: string;
+
+  /** 配置检查函数（可选） */
+  checkConfig?: ToolConfigChecker;
 }
 
 /**

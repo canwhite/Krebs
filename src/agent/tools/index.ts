@@ -15,6 +15,10 @@ export type {
   ToolConfig,
 } from "./types.js";
 
+// 工具状态系统
+export { ToolStatus, checkToolStatus } from "./status.js";
+export type { ToolStatusInfo, ToolConfigChecker } from "./status.js";
+
 // 工具注册表
 export { ToolRegistry, createToolRegistry, globalToolRegistry } from "./registry.js";
 
