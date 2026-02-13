@@ -53,7 +53,9 @@ export class Agent {
   constructor(config: AgentConfig, deps: AgentDeps) {
     this.config = config;
     this.deps = deps;
-    this.maxIterations = deps.toolConfig?.maxIterations ?? 10;
+    // 增加默认最大迭代次数到 30，支持复杂的多步任务（如搜集信息、多轮分析等）
+    // 同时保留安全机制防止无限循环
+    this.maxIterations = deps.toolConfig?.maxIterations ?? 30;
   }
 
   /**
