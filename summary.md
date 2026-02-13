@@ -12,3 +12,30 @@ Tools：
 - ✅ Tool Calls - LLM 返回 tool_calls 结构
 - ✅ 程序化执行 - Agent 执行器调用工具
 - ✅ 适合明确操作 - 读取文件、搜索、API 调用
+
+Session：
+
+```
+用户界面
+   │
+   ▼ 点击"+"按钮
+前端组件
+   │
+   ▼ POST /api/session/create
+后端API
+   │
+   ▼ 生成 sessionId + 创建空会话
+Session存储
+   │      (Markdown文件)
+   ▼      user_1739421234567_abc123def.md
+返回新会话ID
+   │
+   ▼ 更新 currentSessionId
+前端状态
+   │
+   ▼ 用户发送消息
+POST /api/chat
+   │
+   ▼ 使用新 sessionId
+保存消息到对应会话文件
+```

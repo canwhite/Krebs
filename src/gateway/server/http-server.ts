@@ -24,6 +24,7 @@ import type {
   ChatSendParams,
   AgentCreateParams,
   SessionListParams,
+  SessionCreateParams,
 } from "../protocol/frames.js";
 
 const execAsync = promisify(exec);
@@ -281,6 +282,23 @@ export class GatewayHttpServer {
       }
     });
 
+    // 新建会话
+    this.app.post("/api/session/create", async (req, res) => {
+      try {
+        const frame: RequestFrame<SessionCreateParams> = req.body;
+        const response = await this.handleSessionCreate(frame.params!);
+        res.json(this.successResponse(frame.id, response));
+      } catch (error) {
+        log.error("Session create error:", error);
+        res.json(
+          this.errorResponse(req.body?.id ?? "", {
+            code: -1,
+            message: String(error),
+          }),
+        );
+      }
+    });
+
     // 404
     this.app.use((req, res) => {
       res.status(404).json({
@@ -332,9 +350,84 @@ export class GatewayHttpServer {
   }
 
   private async handleSessionList(_params: SessionListParams) {
-    // 这里简化实现，实际应该从存储中读取
+    try {
+      // 检查chatService是否是EnhancedChatService，有sessionStorage属性
+      const chatService = this.chatService as any;
+      if (chatService.sessionStorage && typeof chatService.sessionStorage.listSessions === 'function') {
+        const sessions = await chatService.sessionStorage.listSessions();
+        return {
+          sessions: sessions.map((s: any) => ({
+            sessionId: s.sessionKey || s.sessionId || s,
+            updatedAt: s.entry?.updatedAt || Date.now(),
+            messageCount: 0, // 可以从消息中计算，这里简化
+          })),
+        };
+      }
+
+      // 如果没有sessionStorage，尝试使用agentManager的storage
+      const storage = (this.agentManager as any).deps?.storage;
+      if (storage && typeof storage.listSessions === 'function') {
+        const sessions = await storage.listSessions();
+        return {
+          sessions: sessions.map((s: any) => ({
+            sessionId: s.sessionKey || s.sessionId || s,
+            updatedAt: Date.now(),
+            messageCount: 0,
+          })),
+        };
+      }
+
+      // 如果都不支持，返回空数组
+      return {
+        sessions: [],
+      };
+    } catch (error) {
+      log.error("Failed to list sessions:", error);
+      // 出错时返回空数组，避免影响前端
+      return {
+        sessions: [],
+      };
+    }
+  }
+
+  private async handleSessionCreate(params: SessionCreateParams) {
+    // 生成唯一的sessionId
+    const sessionId = `user:${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    // 创建空会话
+    // 检查chatService是否是EnhancedChatService，有sessionStorage属性
+    const chatService = this.chatService as any;
+    if (chatService.sessionStorage && typeof chatService.sessionStorage.saveSession === 'function') {
+      await chatService.sessionStorage.saveSession(sessionId, []);
+    } else {
+      // 如果没有sessionStorage，尝试使用agentManager的storage
+      const storage = (this.agentManager as any).deps?.storage;
+      if (storage && typeof storage.saveSession === 'function') {
+        await storage.saveSession(sessionId, []);
+      } else {
+        throw new Error('No session storage available');
+      }
+    }
+
+    // 设置初始元数据
+    const metadata = params.metadata || {};
+    const entry = {
+      sessionId,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      ...metadata,
+    };
+
+    // 尝试更新元数据
+    const chatServiceWithStorage = this.chatService as any;
+    if (chatServiceWithStorage.sessionStorage && typeof chatServiceWithStorage.sessionStorage.updateSessionMetadata === 'function') {
+      await chatServiceWithStorage.sessionStorage.updateSessionMetadata(sessionId, entry);
+    }
+
     return {
-      sessions: [],
+      sessionId,
+      createdAt: Date.now(),
+      entry,
     };
   }
 

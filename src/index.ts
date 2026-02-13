@@ -24,6 +24,7 @@ import { CommandLane, setConcurrency } from "@/scheduler/lanes.js";
 import { createEnhancedSessionStorage } from "@/storage/session/index.js";
 import { createDefaultSkillsManager } from "@/agent/skills/index.js";
 import fs from "node:fs/promises";
+import path from "node:path";
 
 /**
  * 主函数
@@ -124,7 +125,7 @@ async function startServer() {
 
   // 初始化存储（使用增强版 Session Storage）
   const sessionStorage = createEnhancedSessionStorage({
-    baseDir: config.storage.dataDir,
+    baseDir: path.join(config.storage.dataDir, "sessions"),
     enableCache: true,
     cacheTtl: 45000, // 45 秒
   });

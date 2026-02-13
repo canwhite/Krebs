@@ -1,7 +1,7 @@
-import { LitElement, html, css } from 'lit';
-import { customElement, state } from 'lit/decorators.js';
-import { ref, createRef } from 'lit/directives/ref.js';
-import { KrebsMarkdown } from '../components/krebs-markdown.js';
+import { LitElement, html, css } from "lit";
+import { customElement, state } from "lit/decorators.js";
+import { ref, createRef } from "lit/directives/ref.js";
+import { KrebsMarkdown } from "../components/krebs-markdown.js";
 
 /**
  * 生成唯一ID（兼容性更好的版本）
@@ -12,7 +12,7 @@ function generateUniqueId(): string {
 
 interface Message {
   id: string;
-  role: 'user' | 'assistant' | 'system';
+  role: "user" | "assistant" | "system";
   content: string;
   timestamp: number;
   toolCalls?: ToolCall[];
@@ -23,14 +23,14 @@ interface ToolCall {
   name: string;
   args: Record<string, unknown>;
   result?: unknown;
-  status: 'pending' | 'running' | 'completed' | 'failed';
+  status: "pending" | "running" | "completed" | "failed";
 }
 
 /**
  * Chat Component
  * Handles message display and input
  */
-@customElement('krebs-chat')
+@customElement("krebs-chat")
 export class KrebsChat extends LitElement {
   static styles = css`
     :host {
@@ -181,6 +181,51 @@ export class KrebsChat extends LitElement {
       cursor: not-allowed;
     }
 
+    button.new-session-button {
+      padding: var(--spacing-md) var(--spacing-lg);
+      background-color: var(--color-surface);
+      color: var(--color-text);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      height: 44px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--spacing-xs);
+      white-space: nowrap;
+    }
+
+    .button-content {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-xs);
+    }
+
+    .button-icon {
+      font-size: var(--font-size-lg);
+      font-weight: 600;
+    }
+
+    .button-label {
+      font-size: var(--font-size-sm);
+      font-weight: 500;
+    }
+
+    button.new-session-button:hover {
+      background-color: var(--color-surface-hover);
+      border-color: var(--color-primary);
+      color: var(--color-primary);
+    }
+
+    button.new-session-button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
     .typing-indicator {
       display: flex;
       gap: var(--spacing-xs);
@@ -204,7 +249,8 @@ export class KrebsChat extends LitElement {
     }
 
     @keyframes typing {
-      0%, 100% {
+      0%,
+      100% {
         opacity: 0.3;
         transform: scale(0.8);
       }
@@ -222,6 +268,20 @@ export class KrebsChat extends LitElement {
       .message-content {
         padding: var(--spacing-sm);
       }
+
+      button.new-session-button {
+        width: 36px;
+        height: 36px;
+        padding: var(--spacing-sm);
+      }
+
+      .button-label {
+        display: none; /* 移动端只显示图标 */
+      }
+
+      .button-icon {
+        font-size: var(--font-size-md);
+      }
     }
   `;
 
@@ -229,13 +289,19 @@ export class KrebsChat extends LitElement {
   private messages: Message[] = [];
 
   @state()
-  private input = '';
+  private input = "";
 
   @state()
   private isSending = false;
 
   @state()
   private isTyping = false;
+
+  @state()
+  private currentSessionId = "default";
+
+  @state()
+  private isCreatingSession = false;
 
   private messagesRef = createRef<HTMLDivElement>();
 
@@ -246,10 +312,10 @@ export class KrebsChat extends LitElement {
           (msg) => html`
             <div class="message ${msg.role}">
               <div class="message-avatar">
-                ${msg.role === 'user' ? 'U' : 'AI'}
+                ${msg.role === "user" ? "U" : "AI"}
               </div>
               <div class="message-content">
-                ${msg.role === 'user'
+                ${msg.role === "user"
                   ? html`${msg.content}`
                   : html`
                       <krebs-markdown
@@ -257,10 +323,10 @@ export class KrebsChat extends LitElement {
                         .isUser=${false}
                       ></krebs-markdown>
                     `}
-                ${msg.toolCalls ? this.renderToolCalls(msg.toolCalls) : ''}
+                ${msg.toolCalls ? this.renderToolCalls(msg.toolCalls) : ""}
               </div>
             </div>
-          `
+          `,
         )}
         ${this.isTyping
           ? html`
@@ -275,11 +341,25 @@ export class KrebsChat extends LitElement {
                 </div>
               </div>
             `
-          : ''}
+          : ""}
       </div>
 
       <div class="input-container">
         <div class="input-wrapper">
+          <button
+            class="new-session-button"
+            @click=${this.createNewSession}
+            ?disabled=${this.isCreatingSession || this.isSending}
+            title="新建会话"
+            aria-label="新建会话"
+          >
+            <span class="button-content">
+              <span class="button-icon"
+                >${this.isCreatingSession ? "..." : "+"}</span
+              >
+              <span class="button-label">新建会话</span>
+            </span>
+          </button>
           <textarea
             placeholder="输入消息... (Shift+Enter 换行)"
             .value=${this.input}
@@ -292,7 +372,7 @@ export class KrebsChat extends LitElement {
             @click=${this.sendMessage}
             ?disabled=${this.isSending || !this.input.trim()}
           >
-            ${this.isSending ? '发送中...' : '发送'}
+            ${this.isSending ? "发送中..." : "发送"}
           </button>
         </div>
       </div>
@@ -310,7 +390,7 @@ export class KrebsChat extends LitElement {
               .result=${tool.result}
               .status=${tool.status}
             ></krebs-tool-card>
-          `
+          `,
         )}
       </div>
     `;
@@ -322,9 +402,53 @@ export class KrebsChat extends LitElement {
   }
 
   private handleKeyDown(e: KeyboardEvent) {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       this.sendMessage();
+    }
+  }
+
+  private async createNewSession() {
+    if (this.isCreatingSession || this.isSending) return;
+
+    this.isCreatingSession = true;
+
+    try {
+      const response = await fetch("/api/session/create", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          agentId: "default",
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to create session: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const { sessionId } = data;
+
+      // 更新当前会话ID
+      this.currentSessionId = sessionId;
+
+      // 清空消息列表
+      this.messages = [];
+
+      // 清空输入框
+      this.input = "";
+
+      // 滚动到底部
+      this.scrollToBottom();
+
+      console.log("New session created:", sessionId);
+    } catch (error) {
+      console.error("Failed to create session:", error);
+      // 这里可以添加错误提示UI
+    } finally {
+      this.isCreatingSession = false;
     }
   }
 
@@ -333,48 +457,48 @@ export class KrebsChat extends LitElement {
 
     const userMessage: Message = {
       id: generateUniqueId(),
-      role: 'user',
+      role: "user",
       content: this.input,
       timestamp: Date.now(),
     };
 
     this.messages = [...this.messages, userMessage];
-    this.input = '';
+    this.input = "";
     this.isSending = true;
     this.isTyping = true;
     this.scrollToBottom();
 
     try {
-      const response = await fetch('/api/chat', {
-        method: 'POST',
+      const response = await fetch("/api/chat", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           message: userMessage.content,
-          sessionId: 'default',
+          sessionId: this.currentSessionId,
         }),
       });
 
-      if (!response.ok) throw new Error('Failed to send message');
+      if (!response.ok) throw new Error("Failed to send message");
 
       const data = await response.json();
 
       const assistantMessage: Message = {
         id: generateUniqueId(),
-        role: 'assistant',
-        content: data.content || '',
+        role: "assistant",
+        content: data.content || "",
         timestamp: Date.now(),
         toolCalls: data.toolCalls,
       };
 
       this.messages = [...this.messages, assistantMessage];
     } catch (error) {
-      console.error('Failed to send message:', error);
+      console.error("Failed to send message:", error);
       const errorMessage: Message = {
         id: generateUniqueId(),
-        role: 'assistant',
-        content: '抱歉，发送消息时出错。请稍后重试。',
+        role: "assistant",
+        content: "抱歉，发送消息时出错。请稍后重试。",
         timestamp: Date.now(),
       };
       this.messages = [...this.messages, errorMessage];
@@ -397,6 +521,6 @@ export class KrebsChat extends LitElement {
 
 declare global {
   interface HTMLElementTagNameMap {
-    'krebs-chat': KrebsChat;
+    "krebs-chat": KrebsChat;
   }
 }

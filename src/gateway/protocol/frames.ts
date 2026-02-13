@@ -78,6 +78,17 @@ export interface SessionListResult {
   }>;
 }
 
+export interface SessionCreateParams {
+  agentId?: string;
+  metadata?: Record<string, unknown>; // 使用通用类型，避免直接依赖SessionEntry
+}
+
+export interface SessionCreateResult {
+  sessionId: string;
+  createdAt: number;
+  entry: Record<string, unknown>; // 使用通用类型
+}
+
 // ============ 事件类型定义 ============
 
 export interface ChatChunkEvent {

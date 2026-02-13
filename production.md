@@ -774,6 +774,11 @@ const agent1Sessions = sessions.filter((s: any) =>
   - 自动保存对话到每日日志文件
   - 自动触发记忆刷新（token 接近限制时）
   - AgentManager 管理 MemoryService 生命周期
+- [x] **UI 新建会话功能**（2026-02-13）：
+  - 添加 `POST /api/session/create` API 端点
+  - 在聊天界面输入栏左侧添加新建会话按钮
+  - 支持创建新会话并清空当前对话
+  - 增强会话列表API返回真实数据
 - [ ] 技能多位置加载（Managed、Workspace、Extra）
 - [ ] 技能依赖自动安装
 - [ ] 性能监控
@@ -875,6 +880,29 @@ const agent1Sessions = sessions.filter((s: any) =>
   - `MemoryStorageConfig` 接口
   - 支持同步配置、查询配置
   - 完整的类型定义
+
+---
+
+**新增功能**（2026-02-13）：
+
+✅ **UI 新建会话功能**：
+- ✅ **新建会话API**：
+  - `POST /api/session/create` - 创建新会话
+  - 生成唯一sessionId（格式：`user:{timestamp}_{random}`）
+  - 返回会话ID和创建时间
+- ✅ **增强会话管理**：
+  - 增强 `GET /api/session/list` 返回真实会话数据
+  - 支持从SessionStorage读取会话列表
+  - 按更新时间排序
+- ✅ **前端UI改进**：
+  - 在聊天组件输入栏左侧添加新建会话按钮
+  - 按钮样式：44×44px，"+"图标，悬停效果
+  - 支持加载状态（显示"..."）
+  - 移动端适配（36×36px）
+- ✅ **会话状态管理**：
+  - 添加 `currentSessionId` 状态管理
+  - 新建会话后清空消息列表和输入框
+  - 发送消息使用当前会话ID
 
 ---
 
