@@ -148,24 +148,13 @@ async function startServer() {
   const agentManager = new AgentManager(
     {
       storageDir: config.storage.dataDir,
-      enableSkills: true,
-      skillTimeout: 5000,
-      logSkillTriggers: true,
     },
     {
       provider: provider!,
       storage: sessionStorage, // 直接注入 SessionStorage
-      skillsManager, // 注入 SkillsManager
+      skillsManager, // 注入 SkillsManager（基于 pi-coding-agent）
     }
   );
-
-  // 注册内置技能（旧系统，保留向后兼容）
-  const skillRegistry = agentManager.getSkillRegistry();
-  const builtinSkills = getBuiltinSkills();
-  for (const skill of builtinSkills) {
-    skillRegistry.register(skill);
-  }
-  logger.info(`已注册 ${builtinSkills.length} 个内置技能（旧系统）`);
 
   // 注册工具（Tool Calling）
   const builtinTools = getBuiltinTools();

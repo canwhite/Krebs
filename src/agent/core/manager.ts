@@ -3,28 +3,27 @@
  *
  * 职责：
  * - 管理 Agent 实例的生命周期
- * - 管理 SkillRegistry 实例（替代全局单例）
- * - 创建 Orchestrator 来编排 Agent 和 Skills
+ * - 管理 ToolRegistry 实例
+ * - 管理 SkillsManager 实例
+ * - 创建 Orchestrator 作为统一入口
  * - 提供依赖注入支持
  *
  * 设计改进：
  * - 移除硬编码的 Storage 依赖
  * - 接受 StorageInterface 作为参数
- * - 管理 SkillRegistry（不再使用全局单例）
+ * - 管理 ToolRegistry（工具系统）
+ * - 管理 SkillsManager（基于 pi-coding-agent）
  * - 集成 Orchestrator 层
  */
 
 import type { AgentConfig } from "@/types/index.js";
 import type { LLMProvider } from "@/provider/index.js";
 import type { AgentDeps, Agent } from "./agent.js";
-import type { SkillRegistry } from "../skills/index.js";
 import type { Tool, ToolConfig } from "../tools/index.js";
 import type { SkillsManager } from "../skills/index.js";
 import type { ToolRegistry } from "../tools/index.js";
 import { Agent as AgentClass } from "./agent.js";
 import { AgentOrchestrator, OrchestratorConfig } from "./orchestrator.js";
-// 直接导入以避免循环依赖
-import { SkillRegistry as SkillRegistryClass } from "../skills/base.js";
 import { createToolRegistry } from "../tools/index.js";
 // Memory Service 导入（可选）
 import { MemoryService } from "@/storage/memory/index.js";
@@ -50,21 +49,6 @@ export interface AgentManagerConfig {
   enableMemory?: boolean;
 
   /**
-   * 是否启用技能调度
-   */
-  enableSkills?: boolean;
-
-  /**
-   * 技能执行超时时间（毫秒）
-   */
-  skillTimeout?: number;
-
-  /**
-   * 是否在日志中显示技能触发信息
-   */
-  logSkillTriggers?: boolean;
-
-  /**
    * 工具配置
    */
   toolConfig?: ToolConfig;
@@ -88,12 +72,6 @@ export interface AgentManagerDeps {
   };
 
   /**
-   * 技能注册表（可选，如果不提供则创建新的）
-   * @deprecated 建议使用 skillsManager
-   */
-  skillRegistry?: SkillRegistry;
-
-  /**
    * 技能管理器（新系统，可选）
    */
   skillsManager?: SkillsManager;
@@ -108,7 +86,6 @@ export class AgentManager {
   private agents = new Map<string, Agent>();
   private orchestrators = new Map<string, AgentOrchestrator>();
   private deps: AgentDeps;
-  private skillRegistry: SkillRegistry;
   private skillsManager?: SkillsManager;
   private config: AgentManagerConfig;
   private tools: Tool[] = [];
@@ -124,10 +101,6 @@ export class AgentManager {
       provider: deps.provider,
       storage: deps.storage,
     };
-
-    // 管理 SkillRegistry（替代全局单例）
-    this.skillRegistry =
-      deps.skillRegistry || this.createDefaultSkillRegistry();
 
     // 管理 SkillsManager（新系统）
     this.skillsManager = deps.skillsManager;
@@ -201,14 +174,11 @@ export class AgentManager {
 
     // 为每个 Agent 创建对应的 Orchestrator
     const orchestratorConfig: OrchestratorConfig = {
-      enableSkills: this.config.enableSkills ?? true,
-      skillTimeout: this.config.skillTimeout,
-      logSkillTriggers: this.config.logSkillTriggers,
+      label: agentConfig.name,
     };
 
     const orchestrator = new AgentOrchestrator(orchestratorConfig, {
       agent,
-      skillRegistry: this.skillRegistry,
       skillsManager: this.skillsManager, // 传递 SkillsManager
     });
 
@@ -281,23 +251,6 @@ export class AgentManager {
    */
   getToolRegistry(): ToolRegistry {
     return this.toolRegistry;
-  }
-
-  /**
-   * 注册技能
-   */
-  registerSkill(skill: any): void {
-    this.skillRegistry.register(skill);
-  }
-
-  /**
-   * 创建默认的技能注册表
-   *
-   * 注意：这里不使用全局单例，而是创建独立的实例
-   */
-  private createDefaultSkillRegistry(): SkillRegistry {
-    // 直接使用导入的 SkillRegistry 类
-    return new SkillRegistryClass();
   }
 
   /**

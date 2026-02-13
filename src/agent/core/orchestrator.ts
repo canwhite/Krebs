@@ -2,50 +2,32 @@
  * Agent Orchestrator - 智能编排器
  *
  * 职责：
- * 1. 检查技能触发
- * 2. 调度技能执行
- * 3. 委托 Agent 处理 LLM 调用
+ * - 委托 Agent 处理 LLM 调用
+ * - 作为 Agent 层的统一入口
  *
  * 设计原则：
- * - 单一职责：专注于技能调度和编排
+ * - 单一职责：专注于 Agent 调用和编排
  * - 依赖注入：所有依赖通过构造函数注入
  * - 可测试性：易于 Mock 和单元测试
+ *
+ * 注意：旧的 Skills 系统（基于 trigger）已移除
+ * 新的 Skills 系统（pi-coding-agent）通过 SkillsManager 注入到 Agent
  */
 
 import type {
-  AgentContext,
   AgentResult,
 } from "@/types/index.js";
-import { createLogger } from "../../shared/logger.js";
 import type { Agent } from "./agent.js";
-import type { Skill, SkillRegistry } from "../skills/base.js";
 import type { SkillsManager } from "../skills/index.js";
-
-const log = createLogger("Orchestrator");
 
 /**
  * Orchestrator 配置
  */
 export interface OrchestratorConfig {
   /**
-   * 是否启用技能调度
+   * Orchestrator 标签（用于日志和调试）
    */
-  enableSkills: boolean;
-
-  /**
-   * 技能执行超时时间（毫秒）
-   */
-  skillTimeout?: number;
-
-  /**
-   * 是否在日志中显示技能触发信息
-   */
-  logSkillTriggers?: boolean;
-
-  /**
-   * 是否启用 Skills 系统（基于 pi-coding-agent）
-   */
-  enableSkillsSystem?: boolean;
+  label?: string;
 }
 
 /**
@@ -58,12 +40,8 @@ export interface OrchestratorDeps {
   agent: Agent;
 
   /**
-   * 技能注册表（旧的系统，保留用于向后兼容）
-   */
-  skillRegistry: SkillRegistry;
-
-  /**
    * Skills Manager（新的系统，基于 pi-coding-agent）
+   * 注意：SkillsManager 被注入到 Agent 中，Orchestrator 不直接使用
    */
   skillsManager?: SkillsManager;
 }
@@ -71,7 +49,8 @@ export interface OrchestratorDeps {
 /**
  * Agent Orchestrator
  *
- * 负责技能调度和编排，决定使用技能还是委托给 Agent
+ * 负责将请求委托给 Agent 处理
+ * 作为 Agent 层的统一入口，便于扩展和测试
  */
 export class AgentOrchestrator {
   private readonly config: OrchestratorConfig;
@@ -86,187 +65,30 @@ export class AgentOrchestrator {
    * 处理用户消息
    *
    * 流程：
-   * 1. 如果启用技能，检查是否有技能被触发
-   * 2. 如果有技能，执行技能并返回结果
-   * 3. 如果没有技能或技能执行失败，委托给 Agent 处理
-   *
-   * 注意：新的 Skills 系统（pi-coding-agent）通过 SkillsManager 注入到 Agent 的 system prompt 中
+   * 1. 直接委托给 Agent 处理
+   * 2. Agent 会使用 SkillsManager 构建的技能 Prompt
+   * 3. Agent 会使用 Tool Calling 系统执行工具
    */
   async process(
     userMessage: string,
     sessionId: string
   ): Promise<AgentResult> {
-    // 如果启用技能调度，先检查技能（旧的系统）
-    if (this.config.enableSkills) {
-      const skillResult = await this.tryExecuteSkills(
-        userMessage,
-        sessionId
-      );
-
-      // 如果技能成功执行，返回结果
-      if (skillResult) {
-        return skillResult;
-      }
-    }
-
-    // 没有技能匹配或技能执行失败，委托给 Agent
-    // Agent 会使用 SkillsManager 构建的技能 Prompt
+    // 直接委托给 Agent
+    // Agent 会使用 SkillsManager 构建的技能 Prompt（通过 system prompt）
+    // Agent 会使用 Tool Calling 系统执行工具
     return this.deps.agent.process(userMessage, sessionId);
   }
 
   /**
    * 流式处理用户消息
-   *
-   * 注意：流式处理通常不走技能系统，直接委托给 Agent
    */
   async processStream(
     userMessage: string,
     sessionId: string,
     onChunk: (chunk: string) => void
   ): Promise<AgentResult> {
-    // 流式处理直接委托给 Agent（技能不支持流式）
+    // 流式处理直接委托给 Agent
     return this.deps.agent.processStream(userMessage, sessionId, onChunk);
-  }
-
-  /**
-   * 尝试执行技能
-   *
-   * @returns 如果技能成功执行，返回结果；否则返回 null
-   */
-  private async tryExecuteSkills(
-    userMessage: string,
-    sessionId: string
-  ): Promise<AgentResult | null> {
-    // 1. 查找触发的技能
-    const triggeredSkills = this.deps.skillRegistry.findByTrigger(
-      userMessage
-    );
-
-    if (triggeredSkills.length === 0) {
-      return null;  // 没有技能被触发
-    }
-
-    // 2. 记录日志
-    if (this.config.logSkillTriggers !== false) {
-      log.info(`Triggered skills: ${triggeredSkills
-        .map((s: Skill) => s.name)
-        .join(", ")}`);
-    }
-
-    // 3. 按顺序执行技能，直到有一个成功
-    for (const skill of triggeredSkills) {
-      try {
-        const result = await this.executeSkillWithTimeout(
-          skill,
-          userMessage,
-          sessionId
-        );
-
-        if (result.success && result.response) {
-          if (this.config.logSkillTriggers !== false) {
-            log.info(`Skill "${skill.name}" executed successfully`);
-          }
-
-          return {
-            response: result.response,
-            success: result.success,
-            data: result.data,
-          };
-        }
-      } catch (error) {
-        // 技能执行失败，继续尝试下一个技能
-        log.error(`Skill "${skill.name}" failed:`, error);
-        continue;
-      }
-    }
-
-    // 所有技能都失败了
-    return null;
-  }
-
-  /**
-   * 执行技能（带超时）
-   */
-  private async executeSkillWithTimeout(
-    skill: Skill,
-    userMessage: string,
-    sessionId: string
-  ): Promise<AgentResult> {
-    const timeout = this.config.skillTimeout ?? 5000;
-
-    // 创建技能上下文
-    const context = await this.createSkillContext(
-      userMessage,
-      sessionId
-    );
-
-    // 执行技能（带超时）
-    const skillResult = await this.withTimeout(
-      skill.execute(context),
-      timeout,
-      `Skill "${skill.name}" execution timeout`
-    );
-
-    // 转换 SkillResult 为 AgentResult
-    return {
-      response: skillResult.response ?? "",
-      success: skillResult.success,
-      data: skillResult.data,
-      error: skillResult.error,
-    };
-  }
-
-  /**
-   * 创建技能上下文
-   *
-   * 注意：这里传递的是精简的上下文，不是完整的历史记录
-   */
-  private async createSkillContext(
-    userMessage: string,
-    sessionId: string
-  ): Promise<AgentContext> {
-    // 获取 Agent 的配置
-    const agentConfig = this.deps.agent.getConfig();
-
-    // 构建精简的上下文（只包含当前消息）
-    const context: AgentContext = {
-      sessionId,
-      messages: [
-        {
-          role: "user",
-          content: userMessage,
-          timestamp: Date.now(),
-        },
-      ],
-      metadata: agentConfig as unknown as Record<string, unknown>,
-    };
-
-    return context;
-  }
-
-  /**
-   * 包装 Promise，添加超时
-   */
-  private async withTimeout<T>(
-    promise: Promise<T>,
-    timeoutMs: number,
-    timeoutMessage: string
-  ): Promise<T> {
-    let timeoutHandle: NodeJS.Timeout | undefined;
-
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      timeoutHandle = setTimeout(() => {
-        reject(new Error(timeoutMessage));
-      }, timeoutMs);
-    });
-
-    try {
-      return await Promise.race([promise, timeoutPromise]);
-    } finally {
-      if (timeoutHandle) {
-        clearTimeout(timeoutHandle);
-      }
-    }
   }
 
   /**
@@ -281,12 +103,5 @@ export class AgentOrchestrator {
    */
   getAgent(): Agent {
     return this.deps.agent;
-  }
-
-  /**
-   * 获取技能注册表
-   */
-  getSkillRegistry(): SkillRegistry {
-    return this.deps.skillRegistry;
   }
 }

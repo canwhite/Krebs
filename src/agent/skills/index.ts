@@ -2,6 +2,9 @@
  * Skills 系统
  *
  * 导出所有 Skills 相关的类型、类和工厂函数
+ *
+ * 注意：旧的 Skills 系统（基于 trigger）已移除
+ * 新的 Skills 系统基于 pi-coding-agent
  */
 
 // 类型定义
@@ -49,8 +52,3 @@ export {
   SkillInstaller,
   getSkillInstaller,
 } from "./installer.js";
-
-// 旧的技能系统（保留向后兼容）
-export { SkillRegistry, createSkillRegistry } from "./base.js";
-export type { Skill, SkillResult } from "./base.js";
-export { getBuiltinSkills } from "./builtin.js";
