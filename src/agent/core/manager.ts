@@ -26,6 +26,8 @@ import { AgentOrchestrator, OrchestratorConfig } from "./orchestrator.js";
 // 直接导入以避免循环依赖
 import { SkillRegistry as SkillRegistryClass } from "../skills/base.js";
 import { createToolRegistry } from "../tools/index.js";
+// Memory Service 导入（可选）
+import { MemoryService } from "@/storage/memory/index.js";
 
 /**
  * AgentManager 配置
@@ -36,6 +38,16 @@ export interface AgentManagerConfig {
    * @deprecated 建议使用 storage 参数
    */
   storageDir?: string;
+
+  /**
+   * 数据目录（用于 MemoryService）
+   */
+  dataDir?: string;
+
+  /**
+   * 是否启用记忆系统
+   */
+  enableMemory?: boolean;
 
   /**
    * 是否启用技能调度
@@ -71,13 +83,8 @@ export interface AgentManagerDeps {
    * 存储接口（可选）
    */
   storage?: {
-    saveSession: (
-      sessionId: string,
-      messages: any[]
-    ) => Promise<void>;
-    loadSession: (
-      sessionId: string
-    ) => Promise<any | null>;
+    saveSession: (sessionId: string, messages: any[]) => Promise<void>;
+    loadSession: (sessionId: string) => Promise<any | null>;
   };
 
   /**
@@ -107,6 +114,7 @@ export class AgentManager {
   private tools: Tool[] = [];
   private toolConfig: ToolConfig = { enabled: true, maxIterations: 10 };
   private toolRegistry: ToolRegistry;
+  private memoryService?: MemoryService;
 
   constructor(config: AgentManagerConfig, deps: AgentManagerDeps) {
     this.config = config;
@@ -118,10 +126,20 @@ export class AgentManager {
     };
 
     // 管理 SkillRegistry（替代全局单例）
-    this.skillRegistry = deps.skillRegistry || this.createDefaultSkillRegistry();
+    this.skillRegistry =
+      deps.skillRegistry || this.createDefaultSkillRegistry();
 
     // 管理 SkillsManager（新系统）
     this.skillsManager = deps.skillsManager;
+
+    // 创建 MemoryService（如果启用）
+    if (config.enableMemory !== false) {
+      this.memoryService = new MemoryService({
+        dataDir: config.dataDir ?? "./data",
+        searchEnabled: true,
+        autoSaveEnabled: true,
+      });
+    }
 
     // 管理工具注册表
     this.toolRegistry = createToolRegistry();
@@ -143,7 +161,9 @@ export class AgentManager {
     this.tools = [...this.tools, ...tools];
     // 同时注册到工具注册表
     this.toolRegistry.registerAll(tools);
-    console.log(`[AgentManager] Registered ${tools.length} tools (total: ${this.tools.length})`);
+    console.log(
+      `[AgentManager] Registered ${tools.length} tools (total: ${this.tools.length})`,
+    );
   }
 
   /**
@@ -173,6 +193,7 @@ export class AgentManager {
       tools: this.tools,
       toolConfig: this.toolConfig,
       skillsManager: this.skillsManager, // 传递 SkillsManager
+      memoryService: this.memoryService, // 传递 MemoryService
     };
 
     const agent = new AgentClass(agentConfig, agentDeps);
@@ -224,9 +245,7 @@ export class AgentManager {
    * 列出所有 Agent
    */
   listAgents(): AgentConfig[] {
-    return Array.from(this.agents.values()).map((agent) =>
-      agent.getConfig()
-    );
+    return Array.from(this.agents.values()).map((agent) => agent.getConfig());
   }
 
   /**
@@ -279,5 +298,30 @@ export class AgentManager {
   private createDefaultSkillRegistry(): SkillRegistry {
     // 直接使用导入的 SkillRegistry 类
     return new SkillRegistryClass();
+  }
+
+  /**
+   * 启动管理器（启动 MemoryService）
+   */
+  async start(): Promise<void> {
+    if (this.memoryService) {
+      await this.memoryService.start();
+    }
+  }
+
+  /**
+   * 停止管理器（停止 MemoryService）
+   */
+  async stop(): Promise<void> {
+    if (this.memoryService) {
+      await this.memoryService.stop();
+    }
+  }
+
+  /**
+   * 获取 MemoryService（用于测试和外部访问）
+   */
+  getMemoryService(): MemoryService | undefined {
+    return this.memoryService;
   }
 }

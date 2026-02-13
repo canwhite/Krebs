@@ -769,6 +769,11 @@ const agent1Sessions = sessions.filter((s: any) =>
 - [x] 技能热加载（chokidar）
 - [x] **Memory Storage 增强**（自动同步 + 混合搜索）
 - [x] **工具调用循环**（多步推理 + 中间消息保存 + 上下文自动压缩）
+- [x] **Memory 系统集成到 Agent 层**（2026-02-12）：
+  - 自动注入相关记忆到对话上下文
+  - 自动保存对话到每日日志文件
+  - 自动触发记忆刷新（token 接近限制时）
+  - AgentManager 管理 MemoryService 生命周期
 - [ ] 技能多位置加载（Managed、Workspace、Extra）
 - [ ] 技能依赖自动安装
 - [ ] 性能监控

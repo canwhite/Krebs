@@ -42,6 +42,7 @@ export interface AgentDeps {
   tools?: Tool[];
   toolConfig?: ToolConfig;
   skillsManager?: any; // SkillsManager 类型
+  memoryService?: any; // MemoryService 类型（可选）- 用于自动注入和保存记忆
 }
 
 export class Agent {
@@ -81,24 +82,80 @@ export class Agent {
     // 加载历史消息
     const history = await this.loadHistory(sessionId);
 
-    // 构建初始消息（用于发送给 LLM）
-    const messagesForLLM: Message[] = [
-      ...(this.config.systemPrompt
-        ? [
+    // ========== 新增：自动注入相关记忆 ==========
+    let messagesForLLM: Message[];
+
+    if (this.deps.memoryService) {
+      try {
+        // 1. 提取最近的消息用于搜索查询
+        const recentMessages = history.slice(-5); // 最近 5 条消息
+
+        // 2. 自动注入相关记忆
+        const enhanced = await this.deps.memoryService.injectRelevantMemories(
+          [
             {
-              role: "system" as const,
-              content: this.buildSystemPrompt(),
+              role: "user",
+              content: userMessage,
               timestamp: Date.now(),
             },
-          ]
-        : []),
-      ...history,
-      {
-        role: "user",
-        content: userMessage,
-        timestamp: Date.now(),
-      },
-    ];
+          ],
+          recentMessages
+        );
+
+        // 3. 构建完整的消息列表（用于发送给 LLM）
+        messagesForLLM = [
+          ...(this.config.systemPrompt
+            ? [
+                {
+                  role: "system" as const,
+                  content: this.buildSystemPrompt(),
+                  timestamp: Date.now(),
+                },
+              ]
+            : []),
+          ...enhanced, // 使用增强后的消息（包含记忆注入）
+        ];
+      } catch (error) {
+        // 记忆注入失败，降级到普通流程
+        console.warn("[Agent] Memory injection failed, falling back to normal flow:", error);
+        messagesForLLM = [
+          ...(this.config.systemPrompt
+            ? [
+                {
+                  role: "system" as const,
+                  content: this.buildSystemPrompt(),
+                  timestamp: Date.now(),
+                },
+              ]
+            : []),
+          ...history,
+          {
+            role: "user",
+            content: userMessage,
+            timestamp: Date.now(),
+          },
+        ];
+      }
+    } else {
+      // 没有 MemoryService，使用普通流程
+      messagesForLLM = [
+        ...(this.config.systemPrompt
+          ? [
+              {
+                role: "system" as const,
+                content: this.buildSystemPrompt(),
+                timestamp: Date.now(),
+              },
+            ]
+          : []),
+        ...history,
+        {
+          role: "user",
+          content: userMessage,
+          timestamp: Date.now(),
+        },
+      ];
+    }
 
     // Tool Calling 循环
     let currentMessages = [...messagesForLLM];
@@ -177,6 +234,38 @@ export class Agent {
       // 自动压缩上下文（如果需要）
       const compressedMessages = await this.compactIfNeeded(messagesToSave);
       await this.saveHistory(sessionId, compressedMessages);
+
+      // ========== 新增：自动保存对话到记忆系统 ==========
+      if (this.deps.memoryService) {
+        try {
+          // 异步保存对话到每日日志（不阻塞响应）
+          setImmediate(async () => {
+            try {
+              await this.deps.memoryService!.saveConversationMemory(messagesToSave);
+              console.log("[Agent] Conversation saved to memory");
+            } catch (error) {
+              console.error("[Agent] Failed to save conversation to memory:", error);
+            }
+          });
+
+          // 检查是否需要触发记忆刷新（在接近上下文限制时）
+          const estimatedTokens = this.estimateTokens(messagesToSave);
+          const maxTokens = this.config.maxTokens || 200000;
+
+          setImmediate(async () => {
+            try {
+              await this.deps.memoryService!.maybeFlushMemory(
+                estimatedTokens,
+                maxTokens
+              );
+            } catch (error) {
+              console.error("[Agent] Failed to flush memory:", error);
+            }
+          });
+        } catch (error) {
+          console.warn("[Agent] Memory save/flush failed:", error);
+        }
+      }
 
       // 构建 Payload 列表
       const payloads = buildPayloads({
