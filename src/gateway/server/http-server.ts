@@ -371,18 +371,8 @@ export class GatewayHttpServer {
         };
       });
     } else {
-      // 降级到旧系统 SkillRegistry
-      const skillRegistry = this.agentManager.getSkillRegistry();
-      const skills = skillRegistry.list();
-      return skills.map((skill: any) => ({
-        id: skill.name,
-        name: skill.name,
-        description: skill.description || "",
-        enabled: skill.enabled ?? true,
-        category: skill.category || "general",
-        emoji: "⚡",
-        tags: [],
-      }));
+      // 旧系统已移除，返回空数组
+      return [];
     }
   }
 
@@ -398,13 +388,8 @@ export class GatewayHttpServer {
         return skillsManager.disableSkill(skillId);
       }
     } else {
-      // 降级到旧系统（不支持启用/禁用）
-      const skillRegistry = this.agentManager.getSkillRegistry();
-      const skill = skillRegistry.get(skillId);
-      if (skill) {
-        log.info(`Skill ${skillId} toggle to ${enabled} (old system, not actually toggled)`);
-        return false;
-      }
+      // 旧系统已移除，不支持切换
+      log.warn(`Skill ${skillId} toggle failed: old system removed`);
       return false;
     }
   }

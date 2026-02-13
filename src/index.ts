@@ -19,7 +19,6 @@ import {
 import { AgentManager } from "@/agent/core/index.js";
 import { GatewayHttpServer, GatewayWsServer } from "@/gateway/index.js";
 import { createChatService } from "@/gateway/service/chat-service.js";
-import { getBuiltinSkills } from "@/agent/skills/index.js";
 import { getBuiltinTools } from "@/agent/tools/index.js";
 import { CommandLane, setConcurrency } from "@/scheduler/lanes.js";
 import { createEnhancedSessionStorage } from "@/storage/session/index.js";

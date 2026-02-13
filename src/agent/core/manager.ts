@@ -87,15 +87,12 @@ export class AgentManager {
   private orchestrators = new Map<string, AgentOrchestrator>();
   private deps: AgentDeps;
   private skillsManager?: SkillsManager;
-  private config: AgentManagerConfig;
   private tools: Tool[] = [];
   private toolConfig: ToolConfig = { enabled: true, maxIterations: 10 };
   private toolRegistry: ToolRegistry;
   private memoryService?: MemoryService;
 
   constructor(config: AgentManagerConfig, deps: AgentManagerDeps) {
-    this.config = config;
-
     // 创建 AgentDeps
     this.deps = {
       provider: deps.provider,
@@ -226,10 +223,10 @@ export class AgentManager {
   }
 
   /**
-   * 获取技能注册表
+   * 获取工具注册表
    */
-  getSkillRegistry(): SkillRegistry {
-    return this.skillRegistry;
+  getToolRegistry(): ToolRegistry {
+    return this.toolRegistry;
   }
 
   /**
@@ -244,13 +241,6 @@ export class AgentManager {
    */
   setSkillsManager(skillsManager: SkillsManager): void {
     this.skillsManager = skillsManager;
-  }
-
-  /**
-   * 获取工具注册表
-   */
-  getToolRegistry(): ToolRegistry {
-    return this.toolRegistry;
   }
 
   /**

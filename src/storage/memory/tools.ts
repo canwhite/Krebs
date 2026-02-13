@@ -12,9 +12,16 @@
 import path from "node:path";
 import fs from "node:fs/promises";
 import type { AgentContext } from "@/types/index.js";
-import type { SkillResult } from "@/agent/skills/base.js";
 import type { MemoryService } from "../memory/service.js";
 import { ensureDir } from "./internal.js";
+
+// 临时类型定义（旧的 SkillResult 已移除）
+interface ToolResult {
+  success: boolean;
+  response?: string;
+  data?: unknown;
+  error?: string;
+}
 
 /**
  * 创建记忆搜索工具
@@ -44,7 +51,7 @@ export function createMemorySearchTool(memoryService: MemoryService) {
     async execute(
       _context: AgentContext,
       args?: { query?: string; max_results?: number }
-    ): Promise<SkillResult> {
+    ): Promise<ToolResult> {
       const query = args?.query ?? "";
       const max_results = args?.max_results ?? 6;
 
@@ -118,7 +125,7 @@ export function createMemorySaveTool(memoryService: MemoryService) {
     async execute(
       _context: AgentContext,
       args?: { content?: string; title?: string; tags?: string[] }
-    ): Promise<SkillResult> {
+    ): Promise<ToolResult> {
       const content = args?.content ?? "";
 
       if (!content) {
@@ -231,7 +238,7 @@ export function createMemoryStatsTool(memoryService: MemoryService) {
       required: [],
     },
 
-    async execute(_context: AgentContext): Promise<SkillResult> {
+    async execute(_context: AgentContext): Promise<ToolResult> {
       const stats = memoryService.getStats();
 
       return {
