@@ -56,6 +56,9 @@ export interface AgentConfig {
   // 新增：Model Fallback 配置
   fallbackEnabled?: boolean;
   fallbackModels?: Array<{ provider: string; model: string }>;
+
+  // 新增：Subagent 配置
+  subagents?: import("@/agent/subagent/types.js").SubagentConfig;
 }
 
 export interface AgentContext {

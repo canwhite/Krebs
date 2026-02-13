@@ -27,6 +27,11 @@ import { AgentOrchestrator, OrchestratorConfig } from "./orchestrator.js";
 import { createToolRegistry } from "../tools/index.js";
 // Memory Service 导入（可选）
 import { MemoryService } from "@/storage/memory/index.js";
+// Subagent 导入（可选）
+import {
+  SubagentRegistry,
+  SubagentConfig,
+} from "../subagent/index.js";
 
 /**
  * AgentManager 配置
@@ -52,6 +57,11 @@ export interface AgentManagerConfig {
    * 工具配置
    */
   toolConfig?: ToolConfig;
+
+  /**
+   * Subagent 配置
+   */
+  subagents?: SubagentConfig;
 }
 
 /**
@@ -91,6 +101,7 @@ export class AgentManager {
   private toolConfig: ToolConfig = { enabled: true, maxIterations: 10 };
   private toolRegistry: ToolRegistry;
   private memoryService?: MemoryService;
+  private subagentRegistry?: SubagentRegistry;
 
   constructor(config: AgentManagerConfig, deps: AgentManagerDeps) {
     // 创建 AgentDeps
@@ -121,6 +132,17 @@ export class AgentManager {
     }
     if (config.toolConfig) {
       this.toolConfig = { ...this.toolConfig, ...config.toolConfig };
+    }
+
+    // 创建 SubagentRegistry（如果配置启用）
+    if (config.subagents?.enabled) {
+      const subagentStoreDir = config.dataDir
+        ? `${config.dataDir}/subagents`
+        : "./data/subagents";
+      this.subagentRegistry = new SubagentRegistry(
+        config.subagents,
+        subagentStoreDir,
+      );
     }
   }
 
@@ -244,11 +266,22 @@ export class AgentManager {
   }
 
   /**
+   * 获取 SubagentRegistry（用于测试和外部访问）
+   */
+  getSubagentRegistry(): SubagentRegistry | undefined {
+    return this.subagentRegistry;
+  }
+
+  /**
    * 启动管理器（启动 MemoryService）
    */
   async start(): Promise<void> {
     if (this.memoryService) {
       await this.memoryService.start();
+    }
+    // 恢复 SubagentRegistry 状态
+    if (this.subagentRegistry) {
+      await this.subagentRegistry.restore();
     }
   }
 
@@ -258,6 +291,10 @@ export class AgentManager {
   async stop(): Promise<void> {
     if (this.memoryService) {
       await this.memoryService.stop();
+    }
+    // 停止 SubagentRegistry
+    if (this.subagentRegistry) {
+      await this.subagentRegistry.stop();
     }
   }
 

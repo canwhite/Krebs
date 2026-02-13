@@ -779,6 +779,16 @@ const agent1Sessions = sessions.filter((s: any) =>
   - 在聊天界面输入栏左侧添加新建会话按钮
   - 支持创建新会话并清空当前对话
   - 增强会话列表API返回真实数据
+
+### 第四阶段（高级功能）🚧 规划中
+- [ ] **Subagent 系统**（基于 openclaw-cn-ds 分析，2026-02-13）：
+  - 支持生成后台子代理运行
+  - 隔离会话执行复杂任务
+  - 结果通知机制（steer、followup、collect、silent模式）
+  - 生命周期管理（注册、执行、通知、清理）
+  - 持久化存储和恢复机制
+  - 配置驱动（全局默认 + agent级别覆盖）
+  - 作为标准工具集成（spawn_subagent工具）
 - [ ] 技能多位置加载（Managed、Workspace、Extra）
 - [ ] 技能依赖自动安装
 - [ ] 性能监控

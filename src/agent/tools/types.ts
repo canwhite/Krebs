@@ -31,6 +31,7 @@ export interface ToolParameterSchema {
   properties?: Record<string, ToolParameterSchema>;
   required?: string[];
   enum?: unknown[];
+  items?: ToolParameterSchema;
 }
 
 import type { ToolConfigChecker } from "./status.js";

@@ -12,6 +12,7 @@ import { createLogger } from "@/shared/logger.js";
 
 import type { Tool } from "./types.js";
 import { webSearchTool, webFetchTool } from "./web.js";
+import { createSpawnSubagentTool } from "./spawn-subagent.js";
 
 const logger = createLogger("BuiltinTools");
 
@@ -363,8 +364,29 @@ export const editTool: Tool = {
 /**
  * 获取所有内置工具
  */
-export function getBuiltinTools(): Tool[] {
-  // 始终包含所有工具，包括 Web 工具
-  // 工具执行时会检查 API Key
-  return [bashTool, readTool, writeTool, editTool, webSearchTool, webFetchTool];
+export function getBuiltinTools(
+  getSessionKey?: () => string,
+  getDisplayName?: () => string,
+  getRegistry?: () => any,
+): Tool[] {
+  const tools = [bashTool, readTool, writeTool, editTool, webSearchTool, webFetchTool];
+
+  // spawn_subagent 工具始终包含在列表中
+  // 但执行时会检查依赖是否可用
+  if (getSessionKey && getDisplayName && getRegistry) {
+    tools.push(
+      createSpawnSubagentTool(getSessionKey, getDisplayName, getRegistry),
+    );
+  } else {
+    // 如果依赖不可用，创建一个返回错误的版本
+    tools.push(
+      createSpawnSubagentTool(
+        () => "unknown",
+        () => "unknown",
+        () => undefined,
+      ),
+    );
+  }
+
+  return tools;
 }
