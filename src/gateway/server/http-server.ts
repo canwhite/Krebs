@@ -282,20 +282,37 @@ export class GatewayHttpServer {
       }
     });
 
-    // 新建会话
+    // 新建会话 (简化版，直接接受参数)
     this.app.post("/api/session/create", async (req, res) => {
       try {
-        const frame: RequestFrame<SessionCreateParams> = req.body;
-        const response = await this.handleSessionCreate(frame.params!);
-        res.json(this.successResponse(frame.id, response));
+        // 检查是否是 RequestFrame 格式
+        if (req.body && typeof req.body === 'object' && 'method' in req.body && 'id' in req.body) {
+          // RequestFrame 格式
+          const frame: RequestFrame<SessionCreateParams> = req.body;
+          const response = await this.handleSessionCreate(frame.params || {});
+          res.json(this.successResponse(frame.id, response));
+        } else {
+          // 简化格式，直接使用 req.body 作为参数
+          const params: SessionCreateParams = req.body || {};
+          const response = await this.handleSessionCreate(params);
+          // 简化格式返回简单JSON
+          res.json(response);
+        }
       } catch (error) {
         log.error("Session create error:", error);
-        res.json(
-          this.errorResponse(req.body?.id ?? "", {
-            code: -1,
-            message: String(error),
-          }),
-        );
+        // 简化格式的错误响应
+        if (req.body && typeof req.body === 'object' && 'method' in req.body && 'id' in req.body) {
+          // RequestFrame 格式的错误响应
+          res.json(
+            this.errorResponse(req.body?.id ?? "", {
+              code: -1,
+              message: String(error),
+            }),
+          );
+        } else {
+          // 简化格式的错误响应
+          res.status(500).json({ error: String(error) });
+        }
       }
     });
 
@@ -390,7 +407,7 @@ export class GatewayHttpServer {
     }
   }
 
-  private async handleSessionCreate(params: SessionCreateParams) {
+  private async handleSessionCreate(params: SessionCreateParams = {}) {
     // 生成唯一的sessionId
     const sessionId = `user:${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -410,7 +427,7 @@ export class GatewayHttpServer {
     }
 
     // 设置初始元数据
-    const metadata = params.metadata || {};
+    const metadata = params?.metadata || {};
     const entry = {
       sessionId,
       createdAt: Date.now(),
