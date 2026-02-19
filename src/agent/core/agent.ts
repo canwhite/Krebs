@@ -111,19 +111,23 @@ export class Agent {
         // 1. 提取最近的消息用于搜索查询
         const recentMessages = history.slice(-5); // 最近 5 条消息
 
-        // 2. 自动注入相关记忆
+        // 2. 构建完整的消息列表（历史 + 当前用户消息）
+        const fullMessages = [
+          ...history,
+          {
+            role: "user",
+            content: userMessage,
+            timestamp: Date.now(),
+          },
+        ];
+
+        // 3. 自动注入相关记忆（注意：injectRelevantMemories 只会在前面插入记忆，不会移除消息）
         const enhanced = await this.deps.memoryService.injectRelevantMemories(
-          [
-            {
-              role: "user",
-              content: userMessage,
-              timestamp: Date.now(),
-            },
-          ],
+          fullMessages,
           recentMessages
         );
 
-        // 3. 构建完整的消息列表（用于发送给 LLM）
+        // 4. 添加 system prompt
         messagesForLLM = [
           ...(this.config.systemPrompt
             ? [
@@ -134,7 +138,7 @@ export class Agent {
                 },
               ]
             : []),
-          ...enhanced, // 使用增强后的消息（包含记忆注入）
+          ...enhanced, // 使用增强后的消息（包含历史 + 记忆注入）
         ];
       } catch (error) {
         // 记忆注入失败，降级到普通流程
