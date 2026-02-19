@@ -57,11 +57,25 @@ export class DeepSeekProvider implements LLMProvider {
 
     // 检查是否有 tool_calls
     if (message?.tool_calls && message.tool_calls.length > 0) {
-      const toolCalls = message.tool_calls.map((tc) => ({
-        id: tc.id,
-        name: tc.function.name,
-        arguments: JSON.parse(tc.function.arguments),
-      }));
+      const toolCalls = message.tool_calls.map((tc) => {
+        try {
+          return {
+            id: tc.id,
+            name: tc.function.name,
+            arguments: JSON.parse(tc.function.arguments),
+          };
+        } catch (error) {
+          console.error('[DeepSeek] Failed to parse tool arguments:', {
+            toolName: tc.function.name,
+            arguments: tc.function.arguments,
+            argumentsLength: tc.function.arguments?.length,
+            error: error instanceof Error ? error.message : error
+          });
+          throw new Error(
+            `Failed to parse arguments for tool ${tc.function.name}: ${error instanceof Error ? error.message : 'Unknown error'}`
+          );
+        }
+      });
 
       return {
         content: "",
