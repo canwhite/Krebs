@@ -27,6 +27,11 @@ import {
   buildAgentSystemPrompt,
   type SystemPromptConfig,
 } from "./system-prompt.js";
+import {
+  isContextOverflowError,
+  ToolErrorKind,
+  classifyToolError,
+} from "../errors.js";
 
 export interface AgentDeps {
   provider: LLMProvider;
@@ -169,6 +174,9 @@ export class Agent {
     const startTime = Date.now();
     const timeoutMs = this.deps.toolConfig?.timeoutMs ?? 600000; // 默认10分钟
 
+    // 自动压缩重试标记（参考 openclaw-cn-ds）
+    let overflowCompactionAttempted = false;
+
     // 添加用户消息到保存列表
     allMessages.push({
       role: "user",
@@ -189,8 +197,41 @@ export class Agent {
         );
       }
 
-      // 调用 LLM
-      const response = await this.callLLM(currentMessages);
+      // 调用 LLM（带自动压缩重试）
+      let response;
+      try {
+        response = await this.callLLM(currentMessages);
+      } catch (error: any) {
+        const errorKind = classifyToolError(error);
+        const errorMessage = error?.message || String(error);
+
+        // 处理上下文溢出（参考 openclaw-cn-ds 的自动压缩重试机制）
+        if (isContextOverflowError(errorMessage) && !overflowCompactionAttempted) {
+          console.log(`[Agent] Context overflow detected, attempting auto-compaction...`);
+
+          // 压缩当前消息
+          const compressedMessages = await this.compactIfNeeded(currentMessages);
+          currentMessages = compressedMessages;
+          overflowCompactionAttempted = true;
+
+          console.log(`[Agent] Auto-compaction succeeded, retrying...`);
+          continue; // 重试
+        }
+
+        // 其他致命错误直接抛出
+        if (errorKind === ToolErrorKind.FATAL) {
+          throw error;
+        }
+
+        // 可重试错误（暂时直接抛出，未来可以添加重试逻辑）
+        if (errorKind === ToolErrorKind.RETRYABLE) {
+          console.warn(`[Agent] Retryable error occurred: ${errorMessage}`);
+          throw error;
+        }
+
+        // 其他错误直接抛出
+        throw error;
+      }
 
       // 检查是否有 tool_calls
       if (response.toolCalls && response.toolCalls.length > 0) {
