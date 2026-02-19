@@ -53,9 +53,9 @@ export class Agent {
   constructor(config: AgentConfig, deps: AgentDeps) {
     this.config = config;
     this.deps = deps;
-    // 增加默认最大迭代次数到 30，支持复杂的多步任务（如搜集信息、多轮分析等）
-    // 同时保留安全机制防止无限循环
-    this.maxIterations = deps.toolConfig?.maxIterations ?? 30;
+    // 参考 openclaw-cn-ds：主要依赖超时控制，迭代限制作为兜底
+    // 默认 1000 次迭代（由 AgentManager 配置），主要防止极端快速循环
+    this.maxIterations = deps.toolConfig?.maxIterations ?? 1000;
   }
 
   /**
@@ -165,6 +165,10 @@ export class Agent {
     const allMessages: Message[] = []; // 保存所有中间消息（用于最终保存）
     const allToolResults: any[] = []; // 收集所有工具结果（用于构建 Payload）
 
+    // 记录开始时间（用于超时控制）
+    const startTime = Date.now();
+    const timeoutMs = this.deps.toolConfig?.timeoutMs ?? 600000; // 默认10分钟
+
     // 添加用户消息到保存列表
     allMessages.push({
       role: "user",
@@ -174,6 +178,16 @@ export class Agent {
 
     while (iteration < this.maxIterations) {
       iteration++;
+
+      // 检查超时（参考 openclaw-cn-ds 的设计）
+      const elapsedMs = Date.now() - startTime;
+      if (elapsedMs > timeoutMs) {
+        throw new Error(
+          `Tool calling timeout (${timeoutMs}ms) reached after ${iteration} iterations ` +
+          `and ${Math.round(elapsedMs / 1000)}s. ` +
+          `The task may be too complex or there may be an infinite loop.`
+        );
+      }
 
       // 调用 LLM
       const response = await this.callLLM(currentMessages);

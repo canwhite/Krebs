@@ -98,7 +98,13 @@ export class AgentManager {
   private deps: AgentDeps;
   private skillsManager?: SkillsManager;
   private tools: Tool[] = [];
-  private toolConfig: ToolConfig = { enabled: true, maxIterations: 10 };
+  // 参考 openclaw-cn-ds 设计：主要依赖超时控制，迭代限制作为兜底保护
+  // 默认配置：1000次迭代（足够高，基本不会触发）+ 10分钟超时（主要控制机制）
+  private toolConfig: ToolConfig = {
+    enabled: true,
+    maxIterations: 1000,    // 高迭代限制，防止极端快速循环
+    timeoutMs: 600000,      // 10分钟超时（主要控制机制）
+  };
   private toolRegistry: ToolRegistry;
   private memoryService?: MemoryService;
   private subagentRegistry?: SubagentRegistry;

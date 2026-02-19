@@ -115,9 +115,9 @@ export interface ToolConfig {
   /** 是否启用工具 */
   enabled: boolean;
 
-  /** 最大循环次数（防止无限循环） */
+  /** 最大循环次数（防止无限循环）- 默认 30 */
   maxIterations?: number;
 
-  /** 超时时间（毫秒） */
-  timeout?: number;
+  /** 工具调用总超时时间（毫秒）- 默认 600000 (10分钟） */
+  timeoutMs?: number;
 }
