@@ -91,9 +91,17 @@ export class Agent {
     userMessage: string,
     sessionId: string
   ): Promise<AgentResult> {
+    console.log(`[Agent] processWithTools called: sessionId="${sessionId}", userMessage="${userMessage.substring(0, 50)}${userMessage.length > 50 ? '...' : ''}"`);
+
     // 加载历史消息
     const history = await this.loadHistory(sessionId);
     console.log(`[Agent] Loaded ${history.length} messages from session "${sessionId}"`);
+
+    // 调试：检查历史消息内容
+    console.log(`[Agent] History messages details:`);
+    history.forEach((msg, i) => {
+      console.log(`  [${i}] role=${msg.role}, content="${msg.content?.substring(0, 50)}${msg.content && msg.content.length > 50 ? '...' : ''}"`);
+    });
 
     // ========== 新增：自动注入相关记忆 ==========
     let messagesForLLM: Message[];
@@ -168,6 +176,21 @@ export class Agent {
           timestamp: Date.now(),
         },
       ];
+
+      // 调试：检查构建的 messagesForLLM
+      console.log(`[Agent] Built messagesForLLM (no memory service): ${messagesForLLM.length} messages`);
+      console.log(`[Agent] System prompt included: ${this.config.systemPrompt ? 'yes' : 'no'}`);
+      console.log(`[Agent] History messages count: ${history.length}`);
+      console.log(`[Agent] User message: "${userMessage.substring(0, 50)}${userMessage.length > 50 ? '...' : ''}"`);
+
+      // 详细显示 messagesForLLM 内容
+      console.log(`[Agent] messagesForLLM details (first 3 messages):`);
+      messagesForLLM.slice(0, 3).forEach((msg, i) => {
+        console.log(`  [${i}] role=${msg.role}, content="${msg.content?.substring(0, 80)}${msg.content && msg.content.length > 80 ? '...' : ''}"`);
+      });
+      if (messagesForLLM.length > 3) {
+        console.log(`  ... and ${messagesForLLM.length - 3} more messages`);
+      }
     }
 
     // Tool Calling 循环
@@ -289,13 +312,15 @@ export class Agent {
       };
       allMessages.push(finalMessage);
 
-      // 保存对话历史（包含所有中间消息）
-      const messagesToSave: Message[] = [
-        ...history,
-        ...allMessages,
-      ];
+      // 保存对话历史（只保存新的消息，不包含已存在的历史）
+      // history 已经存在于存储中，我们只需要保存 allMessages（当前对话的新消息）
+      const messagesToSave: Message[] = [...allMessages];
 
-      console.log(`[Agent] Saving ${messagesToSave.length} messages to session "${sessionId}"`);
+      console.log(`[Agent] Saving ${messagesToSave.length} new messages to session "${sessionId}" (history has ${history.length} existing messages)`);
+      console.log(`[Agent] New messages to save:`);
+      allMessages.forEach((msg, i) => {
+        console.log(`  [${i}] role=${msg.role}, content="${msg.content?.substring(0, 50)}${msg.content && msg.content.length > 50 ? '...' : ''}"`);
+      });
 
       // 自动压缩上下文（如果需要）
       const compressedMessages = await this.compactIfNeeded(messagesToSave);
@@ -413,9 +438,8 @@ export class Agent {
       onChunk
     );
 
-    // 保存对话历史（不包含系统提示词）
+    // 保存对话历史（只保存新的消息，不包含已存在的历史）
     const messagesToSave: Message[] = [
-      ...history,
       {
         role: "user",
         content: userMessage,
@@ -427,6 +451,7 @@ export class Agent {
         timestamp: Date.now(),
       },
     ];
+    console.log(`[Agent] Saving ${messagesToSave.length} new messages via stream to session "${sessionId}"`);
     await this.saveHistory(sessionId, messagesToSave);
 
     return {
@@ -620,8 +645,22 @@ export class Agent {
 
   private async loadHistory(sessionId: string): Promise<Message[]> {
     if (this.deps.storage) {
-      return (await this.deps.storage.loadSession(sessionId)) ?? [];
+      const history = await this.deps.storage.loadSession(sessionId);
+      console.log(`[Agent] loadHistory called: sessionId="${sessionId}", returned ${history?.length || 0} messages`);
+
+      // 添加详细调试信息
+      if (history && history.length > 0) {
+        console.log(`[Agent] First message in history: role="${history[0].role}", content="${history[0].content?.substring(0, 50)}..."`);
+        console.log(`[Agent] Last message in history: role="${history[history.length-1].role}", content="${history[history.length-1].content?.substring(0, 50)}..."`);
+      } else if (history === null) {
+        console.log(`[Agent] loadSession returned null for sessionId="${sessionId}"`);
+      } else {
+        console.log(`[Agent] loadSession returned empty array for sessionId="${sessionId}"`);
+      }
+
+      return history ?? [];
     }
+    console.log(`[Agent] loadHistory: no storage available for sessionId="${sessionId}"`);
     return [];
   }
 
@@ -630,6 +669,12 @@ export class Agent {
     messages: Message[]
   ): Promise<void> {
     if (this.deps.storage) {
+      // 添加调试日志
+      console.log(`[Agent] saveHistory called: sessionId="${sessionId}", messages=${messages.length}`);
+      if (messages.length > 0) {
+        console.log(`[Agent] First message: role=${messages[0].role}, content=${messages[0].content?.substring(0, 50)}...`);
+        console.log(`[Agent] Last message: role=${messages[messages.length-1].role}, content=${messages[messages.length-1].content?.substring(0, 50)}...`);
+      }
       await this.deps.storage.saveSession(sessionId, messages);
     }
   }

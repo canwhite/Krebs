@@ -153,20 +153,22 @@ async function startServer() {
       provider: provider!,
       storage: sessionStorage, // 直接注入 SessionStorage
       skillsManager, // 注入 SkillsManager（基于 pi-coding-agent）
-    }
+    },
   );
 
   // 注册工具（Tool Calling）
   const builtinTools = getBuiltinTools();
   agentManager.registerTools(builtinTools);
-  logger.info(`已注册 ${builtinTools.length} 个工具: ${builtinTools.map(t => t.name).join(", ")}`);
+  logger.info(
+    `已注册 ${builtinTools.length} 个工具: ${builtinTools.map((t) => t.name).join(", ")}`,
+  );
 
   // 创建默认 Agent
   if (provider) {
     const defaultAgent = agentManager.createAgent({
       id: "default",
       name: "默认助手",
-      systemPrompt: "你是一个有用的 AI 助手，可以帮助用户解答问题、完成任务。",
+      systemPrompt: `你是一个有用的 AI 助手，可以帮助用户解答问题、完成任务。`,
       model: config.agent.defaultModel ?? "deepseek-chat",
       temperature: 0.7,
       maxTokens: 4096,
@@ -179,17 +181,17 @@ async function startServer() {
 
   // 启动 Gateway 服务器（使用 ChatService 接口 + AgentManager）
   const httpServer = new GatewayHttpServer(
-    chatService,  // 注入 ChatService 用于聊天
+    chatService, // 注入 ChatService 用于聊天
     config.server.port,
     config.server.host,
-    agentManager  // 注入 AgentManager 用于管理接口
+    agentManager, // 注入 AgentManager 用于管理接口
   );
   await httpServer.start();
 
   const wsServer = new GatewayWsServer(
-    chatService,  // 注入 ChatService
+    chatService, // 注入 ChatService
     config.server.port + 1,
-    config.server.host
+    config.server.host,
   );
 
   logger.info(`✅ krebs CN 启动成功！`);

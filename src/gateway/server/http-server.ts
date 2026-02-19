@@ -72,14 +72,16 @@ export class GatewayHttpServer {
 
     // 如果已有映射，返回之前的 sessionId
     if (this.sessionMap.has(clientKey)) {
-      return this.sessionMap.get(clientKey)!;
+      const existingSessionId = this.sessionMap.get(clientKey)!;
+      log.debug(`Reusing existing sessionId: "${existingSessionId}" for client "${clientKey.substring(0, 50)}..."`);
+      return existingSessionId;
     }
 
-    // 生成新的 sessionId
-    const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    // 生成新的 sessionId - 统一使用 user: 格式
+    const sessionId = `user:${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     this.sessionMap.set(clientKey, sessionId);
 
-    console.log(`[HTTP Server] Created new sessionId "${sessionId}" for client "${clientKey.substring(0, 50)}..."`);
+    log.info(`Created new sessionId "${sessionId}" for client "${clientKey.substring(0, 50)}..."`);
 
     return sessionId;
   }
@@ -232,7 +234,7 @@ export class GatewayHttpServer {
         // ✅ 如果没有提供 sessionId，使用基于客户端标识的固定 sessionId
         const effectiveSessionId = sessionId || this.getDefaultSessionId(req);
 
-        console.log(`[HTTP Server] Processing chat request: sessionId="${effectiveSessionId}", agentId="${agentId || "default"}", messageLength=${message?.length || 0}`);
+        log.info(`Processing chat request: sessionId="${effectiveSessionId}", agentId="${agentId || "default"}", messageLength=${message?.length || 0}, providedSessionId=${sessionId ? `"${sessionId}"` : 'null'}`);
 
         const result = await this.chatService.process(
           agentId || "default",
@@ -448,18 +450,22 @@ export class GatewayHttpServer {
   private async handleSessionCreate(params: SessionCreateParams = {}) {
     // 生成唯一的sessionId
     const sessionId = `user:${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    log.info(`Creating new session: sessionId="${sessionId}", params=${JSON.stringify(params)}`);
 
     // 创建空会话
     // 检查chatService是否是EnhancedChatService，有sessionStorage属性
     const chatService = this.chatService as any;
     if (chatService.sessionStorage && typeof chatService.sessionStorage.saveSession === 'function') {
+      log.debug(`Using chatService.sessionStorage to save session`);
       await chatService.sessionStorage.saveSession(sessionId, []);
     } else {
       // 如果没有sessionStorage，尝试使用agentManager的storage
       const storage = (this.agentManager as any).deps?.storage;
       if (storage && typeof storage.saveSession === 'function') {
+        log.debug(`Using agentManager.storage to save session`);
         await storage.saveSession(sessionId, []);
       } else {
+        log.error('No session storage available');
         throw new Error('No session storage available');
       }
     }
@@ -479,6 +485,7 @@ export class GatewayHttpServer {
       await chatServiceWithStorage.sessionStorage.updateSessionMetadata(sessionId, entry);
     }
 
+    log.info(`Session created successfully: sessionId="${sessionId}", entry=${JSON.stringify(entry)}`);
     return {
       sessionId,
       createdAt: Date.now(),

@@ -20,6 +20,7 @@ import type {
   SessionLoadResult,
 } from "./types.js";
 import type { Message } from "@/types/index.js";
+import { createLogger } from "@/shared/logger.js";
 
 /**
  * Session Store 类
@@ -29,11 +30,13 @@ export class SessionStore {
   private readonly enableCache: boolean;
   private readonly cacheTtl: number;
   private readonly cache = new Map<string, { data: SessionEntry; loadedAt: number }>();
+  private readonly logger = createLogger("SessionStore");
 
   constructor(options: SessionStoreOptions) {
     this.baseDir = path.resolve(options.baseDir);
     this.enableCache = options.enableCache ?? true;
     this.cacheTtl = options.cacheTtl ?? 45000; // 45 秒
+    this.logger.info(`SessionStore initialized: baseDir=${this.baseDir}, enableCache=${this.enableCache}, cacheTtl=${this.cacheTtl}`);
   }
 
   /**
@@ -53,7 +56,9 @@ export class SessionStore {
     const filename = sessionKey
       .replace(/[^a-zA-Z0-9._-]/g, "_")
       .toLowerCase();
-    return path.join(this.baseDir, `${filename}.md`);
+    const filePath = path.join(this.baseDir, `${filename}.md`);
+    this.logger.debug(`resolveSessionPath: sessionKey="${sessionKey}" -> filename="${filename}.md" -> path="${filePath}"`);
+    return filePath;
   }
 
   /**
@@ -191,9 +196,11 @@ export class SessionStore {
     messages: Message[],
     metadata: Partial<SessionEntry> = {},
   ): Promise<void> {
+    this.logger.debug(`saveSession called: sessionKey="${sessionKey}", messages=${messages.length}, metadata=${JSON.stringify(metadata)}`);
     await this.withLock(sessionKey, async () => {
       await this.saveSessionUnlocked(sessionKey, messages, metadata);
     });
+    this.logger.debug(`saveSession completed: sessionKey="${sessionKey}"`);
   }
 
   /**
@@ -205,14 +212,22 @@ export class SessionStore {
     metadata: Partial<SessionEntry> = {},
   ): Promise<void> {
     const filePath = this.resolveSessionPath(sessionKey);
+    this.logger.debug(`saveSessionUnlocked: sessionKey="${sessionKey}", filePath="${filePath}", incomingMessages=${messages.length}`);
     await this.ensureDir(path.dirname(filePath));
 
-    // 加载现有元数据
+    // 加载现有元数据和消息
     let existingMetadata: Partial<SessionEntry> = {};
+    let existingMessages: Message[] = [];
+
     if (existsSync(filePath)) {
+      this.logger.debug(`Existing session file found, loading metadata and messages`);
       const content = await fs.readFile(filePath, "utf-8");
       const parsed = this.parseMarkdown(content);
       existingMetadata = parsed.metadata;
+      existingMessages = this.parseMessages(parsed.content);
+      this.logger.debug(`Loaded existing: metadata=${JSON.stringify(existingMetadata)}, messages=${existingMessages.length}`);
+    } else {
+      this.logger.debug(`No existing session file, creating new one`);
     }
 
     // 合并元数据（注意顺序！）
@@ -225,8 +240,13 @@ export class SessionStore {
       updatedAt: now, // 确保使用最新的时间
     };
 
+    // 合并消息：现有消息 + 新消息
+    // 实现去重逻辑，避免重复添加相同的消息
+    const allMessages = this.mergeMessagesWithoutDuplicates(existingMessages, messages);
+    this.logger.info(`Merged messages: existing=${existingMessages.length}, new=${messages.length}, total=${allMessages.length} (after deduplication)`);
+
     // 序列化消息内容
-    const messageContent = this.serializeMessages(messages);
+    const messageContent = this.serializeMessages(allMessages);
 
     // 写入文件
     const markdown = this.serializeMarkdown(mergedMetadata, messageContent);
@@ -234,6 +254,74 @@ export class SessionStore {
 
     // 更新缓存
     this.setCached(sessionKey, mergedMetadata);
+
+    this.logger.info(`Session saved successfully: sessionKey="${sessionKey}", sessionId="${mergedMetadata.sessionId}", totalMessages=${allMessages.length}, fileSize=${markdown.length}`);
+  }
+
+  /**
+   * 合并消息并去重
+   *
+   * 避免重复保存相同的消息。基于内容、角色和时间戳进行去重。
+   */
+  private mergeMessagesWithoutDuplicates(
+    existingMessages: Message[],
+    newMessages: Message[]
+  ): Message[] {
+    // 如果现有消息为空，直接返回新消息
+    if (existingMessages.length === 0) {
+      return [...newMessages];
+    }
+
+    // 如果新消息为空，返回现有消息
+    if (newMessages.length === 0) {
+      return [...existingMessages];
+    }
+
+    // 创建现有消息的指纹集合用于快速查找
+    const existingFingerprints = new Set<string>();
+    for (const msg of existingMessages) {
+      const fingerprint = this.getMessageFingerprint(msg);
+      existingFingerprints.add(fingerprint);
+    }
+
+    // 过滤新消息，只保留不在现有消息中的
+    const uniqueNewMessages: Message[] = [];
+    for (const msg of newMessages) {
+      const fingerprint = this.getMessageFingerprint(msg);
+      if (!existingFingerprints.has(fingerprint)) {
+        uniqueNewMessages.push(msg);
+        existingFingerprints.add(fingerprint); // 添加到集合，避免新消息之间的重复
+      } else {
+        this.logger.debug(`Skipping duplicate message: ${fingerprint}`);
+      }
+    }
+
+    this.logger.debug(`Deduplication: existing=${existingMessages.length}, new=${newMessages.length}, unique=${uniqueNewMessages.length}`);
+
+    // 返回合并后的消息（现有消息 + 去重后的新消息）
+    return [...existingMessages, ...uniqueNewMessages];
+  }
+
+  /**
+   * 生成消息指纹用于去重
+   *
+   * 基于角色、内容和时间戳（精确到秒）生成唯一标识
+   */
+  private getMessageFingerprint(msg: Message): string {
+    // 使用角色和内容作为主要标识
+    // 对于工具调用，包含toolCalls信息
+    let contentHash = msg.content || '';
+
+    if (msg.toolCalls && Array.isArray(msg.toolCalls)) {
+      // 对toolCalls进行稳定序列化
+      const toolCallsStr = JSON.stringify(msg.toolCalls, Object.keys(msg.toolCalls).sort());
+      contentHash += `|toolCalls:${toolCallsStr}`;
+    }
+
+    // 时间戳精确到秒，避免毫秒级差异导致无法匹配
+    const timestampSec = Math.floor((msg.timestamp || Date.now()) / 1000);
+
+    return `${msg.role}|${contentHash}|${timestampSec}`;
   }
 
   /**
@@ -278,7 +366,8 @@ export class SessionStore {
    */
   private parseMessages(content: string): Message[] {
     const messages: Message[] = [];
-    const messageRegex = /## (\w+)\n\n([\s\S]*?)(?=\n## |\n*$)/g;
+    // 修复正则：支持 ## role\n内容 和 ## role\n\n内容 两种格式
+    const messageRegex = /## (\w+)\n(\n?)([\s\S]*?)(?=\n## |\n*$)/g;
     let match;
 
     while ((match = messageRegex.exec(content)) !== null) {
@@ -289,7 +378,7 @@ export class SessionStore {
         continue;
       }
 
-      const messageContent = match[2];
+      const messageContent = match[3]; // 第3个捕获组是内容
 
       // 检查是否包含 tool_calls
       const toolCallsMatch = messageContent.match(/### tool_calls\n\n([\s\S]*?)\n\n/);
@@ -327,24 +416,34 @@ export class SessionStore {
    * 加载会话
    */
   async loadSession(sessionKey: string): Promise<SessionLoadResult | null> {
+    this.logger.info(`loadSession called: sessionKey="${sessionKey}"`);
+
     // 先检查缓存
     const cachedEntry = this.getCached(sessionKey);
     if (cachedEntry) {
+      this.logger.debug(`Cache hit for sessionKey="${sessionKey}"`);
       // 从缓存获取元数据，但仍需加载消息内容
       const filePath = this.resolveSessionPath(sessionKey);
       if (existsSync(filePath)) {
         const content = await fs.readFile(filePath, "utf-8");
         const { content: body } = this.parseMarkdown(content);
         const messages = this.parseMessages(body);
+        this.logger.debug(`Loaded from cache: sessionKey="${sessionKey}", messages=${messages.length}`);
         return { entry: cachedEntry, messages };
       }
+    } else {
+      this.logger.debug(`Cache miss for sessionKey="${sessionKey}"`);
     }
 
     const filePath = this.resolveSessionPath(sessionKey);
+    this.logger.debug(`Checking file existence: path="${filePath}"`);
 
     if (!existsSync(filePath)) {
+      this.logger.warn(`Session file not found: sessionKey="${sessionKey}", path="${filePath}"`);
       return null;
     }
+
+    this.logger.info(`Session file found: sessionKey="${sessionKey}", path="${filePath}"`);
 
     const content = await fs.readFile(filePath, "utf-8");
     const { metadata, content: body } = this.parseMarkdown(content);
@@ -361,6 +460,7 @@ export class SessionStore {
     // 更新缓存
     this.setCached(sessionKey, entry);
 
+    this.logger.info(`Session loaded successfully: sessionKey="${sessionKey}", entry.sessionId="${entry.sessionId}", messages=${messages.length}`);
     return { entry, messages };
   }
 
