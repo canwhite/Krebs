@@ -796,6 +796,84 @@ const agent1Sessions = sessions.filter((s: any) =>
 
 ---
 
+**新增功能**（2026-02-19 Phase 2）：
+
+✅ **System Prompt 增强功能（Phase 2）**：
+- ✅ **上下文文件支持**：
+  - 支持 SOUL.md, AGENTS.md, TOOLS.md 等项目上下文文件
+  - 自动检测 SOUL.md 并指导 Agent 体现其人格和语气
+  - 上下文文件内容注入到 "# Project Context" 部分
+  - 支持多个上下文文件同时加载
+- ✅ **自动检测 git root**：
+  - 新增 `findGitRoot()` 函数
+  - 自动向上遍历查找 .git 目录
+  - 支持 .git 目录和 .git 文件（submodule）
+  - 最多向上查找 12 级目录
+- ✅ **增强 Runtime 信息**：
+  - 新增 `channel` 字段：记录当前频道（discord, telegram, etc.）
+  - 新增 `capabilities` 字段：记录频道能力（inlineButtons, reactions, threads）
+  - Runtime 格式化：所有字段用 `|` 分隔显示
+- ✅ **导出关键类型和函数**：
+  - `ContextFile` 类型：上下文文件接口
+  - `RuntimeInfo` 接口：增强的运行时信息
+  - `findGitRoot()` 函数：可导出使用
+- ✅ **完整的测试覆盖**：
+  - Phase 2 新增 12 个测试
+  - 总计 34 个测试全部通过
+  - 覆盖上下文文件、git root 检测、增强的 Runtime 信息
+
+**测试统计**：
+- 测试文件：test/agent/system-prompt.test.ts
+- Phase 1 测试：22 个
+- Phase 2 测试：12 个
+- 总计：34 个测试
+- 通过率：100%
+
+---
+
+**新增功能**（2026-02-19 Phase 1）：
+
+✅ **System Prompt 增强**（Phase 1 核心改造，基于 openclaw-cn-ds 分析）：
+- ✅ **增强 Tool System**：
+  - 核心工具摘要（CORE_TOOL_SUMMARIES）：为常用工具提供标准描述
+  - 工具优先级排序（TOOL_ORDER）：常用工具优先显示
+  - 大小写不敏感的工具名解析：支持 "Read"、"READ"、"read" 统一处理
+  - 工具去重：自动去除重复工具（大小写不敏感）
+  - 额外工具排序：不在核心列表中的工具按字母排序
+- ✅ **新增 Tool Call Style Section**：
+  - 指导 Agent 何时叙述工具调用
+  - 默认不叙述常规、低风险工具调用
+  - 仅在多步骤工作、复杂问题、敏感操作或用户明确要求时叙述
+  - 要求叙述简洁、价值密集
+- ✅ **新增 Memory Recall Section**：
+  - 当 memory_search 或 memory_get 工具可用时自动添加
+  - 指导 Agent 在回答前先搜索记忆
+  - 提供步骤化指导（搜索 → 获取 → 确认）
+  - 帮助维护跨对话的上下文一致性
+- ✅ **增强 Runtime Information**：
+  - 支持 agentId, host, os, arch, node 等详细运行时信息
+  - 支持多模型配置（model + defaultModel）
+  - 支持 repoRoot（项目根目录）
+- ✅ **完整的单元测试**：
+  - 22 个测试全部通过
+  - 覆盖工具排序、摘要、大小写解析、去重
+  - 覆盖 Tool Call Style 和 Memory Recall sections
+  - 覆盖 full/minimal/none 三种模式
+  - 覆盖运行时信息构建
+
+**架构改进**：
+- ✅ 参考 openclaw-cn-ds 设计，保持 Krebs 简洁性
+- ✅ Section 化构建策略，易于扩展
+- ✅ 类型安全（TypeScript）
+- ✅ 完整的测试覆盖
+
+**测试统计**：
+- 测试文件：test/agent/system-prompt.test.ts
+- 测试用例：22 个
+- 通过率：100%
+
+---
+
 **新增功能**（2026-02-05）：
 
 ✅ **工具调用循环增强**（基于 openclaw-cn-ds 调度机制分析）：

@@ -6,6 +6,7 @@
  * - 工具执行（Tool Calling 循环）
  * - 历史记录存储
  * - 流式响应处理
+ * - 上下文文件加载（SOUL.md）
  *
  * 设计原则：
  * - 单一职责：专注于 LLM 对话管理和工具执行
@@ -18,6 +19,7 @@ import type {
   AgentResult,
   Message,
 } from "@/types/index.js";
+import { loadContextFiles } from "./context-loader.js";
 import { buildPayloads } from "../payload/index.js";
 import { runWithModelFallback, type ModelConfig } from "../model-fallback/index.js";
 import type { LLMProvider } from "@/provider/index.js";
@@ -658,6 +660,16 @@ export class Agent {
       }
     }
 
+    // 加载上下文文件（新增）
+    let contextFiles = undefined;
+    if (this.config.workspaceDir) {
+      try {
+        contextFiles = loadContextFiles(this.config.workspaceDir);
+      } catch (error) {
+        console.warn("Failed to load context files:", error);
+      }
+    }
+
     // 构建配置
     const sysPromptConfig: SystemPromptConfig = {
       promptMode: this.config.systemPromptMode || "full",
@@ -671,6 +683,7 @@ export class Agent {
       runtime: {
         environment: (process.env.NODE_ENV as any) || "development",
       },
+      contextFiles, // 新增：上下文文件
     };
 
     // 使用新的构建函数
