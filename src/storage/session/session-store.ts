@@ -238,30 +238,86 @@ export class SessionStore {
 
   /**
    * 序列化消息
+   *
+   * 支持：
+   * - 普通 user/assistant/system 消息
+   * - tool_calls (assistant 的工具调用)
+   * - tool_result (工具执行结果)
    */
   private serializeMessages(messages: Message[]): string {
     return messages
-      .map((m) => `## ${m.role}\n\n${m.content}`)
+      .map((m) => {
+        let lines: string[] = [];
+
+        // 基础 role
+        lines.push(`## ${m.role}`);
+
+        // 如果有 tool_calls，序列化
+        if (m.toolCalls && Array.isArray(m.toolCalls) && m.toolCalls.length > 0) {
+          lines.push(`\n### tool_calls\n`);
+          lines.push(`\n${JSON.stringify(m.toolCalls, null, 2)}\n`);
+        }
+
+        // 消息内容
+        if (m.content) {
+          lines.push(`\n${m.content}`);
+        }
+
+        return lines.join("");
+      })
       .join("\n\n");
   }
 
   /**
    * 解析消息
+   *
+   * 支持：
+   * - 普通 user/assistant/system 消息
+   * - tool_calls (assistant 的工具调用)
+   * - tool_result (工具执行结果)
    */
   private parseMessages(content: string): Message[] {
     const messages: Message[] = [];
-    const roleRegex = /## (\w+)\n\n([\s\S]*?)(?=\n## |\n*$)/g;
+    const messageRegex = /## (\w+)\n\n([\s\S]*?)(?=\n## |\n*$)/g;
     let match;
 
-    while ((match = roleRegex.exec(content)) !== null) {
+    while ((match = messageRegex.exec(content)) !== null) {
       const role = match[1] as "user" | "assistant" | "system";
+
       // 只添加有效的 role
-      if (role === "user" || role === "assistant" || role === "system") {
-        messages.push({
-          role,
-          content: match[2].trim(),
-        });
+      if (role !== "user" && role !== "assistant" && role !== "system") {
+        continue;
       }
+
+      const messageContent = match[2];
+
+      // 检查是否包含 tool_calls
+      const toolCallsMatch = messageContent.match(/### tool_calls\n\n([\s\S]*?)\n\n/);
+
+      let toolCalls: any[] | undefined;
+      if (toolCallsMatch) {
+        try {
+          toolCalls = JSON.parse(toolCallsMatch[1].trim());
+        } catch (error) {
+          console.warn('[SessionStore] Failed to parse tool_calls:', error);
+        }
+      }
+
+      // 提取实际内容（排除 tool_calls 部分）
+      let actualContent = messageContent;
+      if (toolCallsMatch) {
+        // 移除 tool_calls 部分
+        actualContent = messageContent.replace(/### tool_calls\n\n[\s\S]*?\n\n/, "").trim();
+      } else {
+        actualContent = messageContent.trim();
+      }
+
+      messages.push({
+        role,
+        content: actualContent,
+        ...(toolCalls ? { toolCalls } : {}),
+        timestamp: Date.now(),
+      } as Message);
     }
 
     return messages;

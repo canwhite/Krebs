@@ -37,6 +37,7 @@ export class GatewayHttpServer {
   private readonly agentManager: AgentManager;
   private readonly port: number;
   private readonly host: string;
+  private readonly sessionMap = new Map<string, string>();  // IP/UA -> sessionId
 
   constructor(
     chatService: IChatService, // 使用 ChatService 接口
@@ -52,6 +53,35 @@ export class GatewayHttpServer {
 
     this.setupMiddleware();
     this.setupRoutes();
+  }
+
+  /**
+   * 获取或生成默认的 sessionId
+   *
+   * 基于客户端标识（IP + User-Agent）生成固定的 sessionId
+   * 这样同一个浏览器会话可以保持对话历史
+   */
+  private getDefaultSessionId(req: express.Request): string {
+    const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0] ||
+               req.connection.remoteAddress ||
+               'unknown';
+    const userAgent = req.headers['user-agent'] || 'unknown';
+
+    // 生成客户端标识
+    const clientKey = `${ip}:${userAgent}`;
+
+    // 如果已有映射，返回之前的 sessionId
+    if (this.sessionMap.has(clientKey)) {
+      return this.sessionMap.get(clientKey)!;
+    }
+
+    // 生成新的 sessionId
+    const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    this.sessionMap.set(clientKey, sessionId);
+
+    console.log(`[HTTP Server] Created new sessionId "${sessionId}" for client "${clientKey.substring(0, 50)}..."`);
+
+    return sessionId;
   }
 
   private setupMiddleware(): void {
@@ -198,15 +228,23 @@ export class GatewayHttpServer {
     this.app.post("/api/chat", async (req, res) => {
       try {
         const { message, sessionId, agentId } = req.body;
+
+        // ✅ 如果没有提供 sessionId，使用基于客户端标识的固定 sessionId
+        const effectiveSessionId = sessionId || this.getDefaultSessionId(req);
+
+        console.log(`[HTTP Server] Processing chat request: sessionId="${effectiveSessionId}", agentId="${agentId || "default"}", messageLength=${message?.length || 0}`);
+
         const result = await this.chatService.process(
           agentId || "default",
           message,
-          sessionId || "default",
+          effectiveSessionId,
         );
+
         res.json({
           content: result.response,
           payloads: result.payloads,
           usage: result.usage,
+          sessionId: effectiveSessionId,  // ✅ 返回 sessionId 给前端，让前端可以复用
         });
       } catch (error) {
         log.error("Chat error:", error);

@@ -298,7 +298,7 @@ export class KrebsChat extends LitElement {
   private isTyping = false;
 
   @state()
-  private currentSessionId = "default";
+  private currentSessionId: string | null = null;  // ✅ 改为 null，让后端自动生成
 
   @state()
   private isCreatingSession = false;
@@ -463,6 +463,7 @@ export class KrebsChat extends LitElement {
     };
 
     this.messages = [...this.messages, userMessage];
+    const messageToSend = this.input;
     this.input = "";
     this.isSending = true;
     this.isTyping = true;
@@ -475,14 +476,21 @@ export class KrebsChat extends LitElement {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          message: userMessage.content,
-          sessionId: this.currentSessionId,
+          message: messageToSend,
+          sessionId: this.currentSessionId,  // ✅ 首次 null，之后使用服务器返回的
+          agentId: "default",
         }),
       });
 
       if (!response.ok) throw new Error("Failed to send message");
 
       const data = await response.json();
+
+      // ✅ 关键修复：保存服务器返回的 sessionId
+      if (data.sessionId) {
+        this.currentSessionId = data.sessionId;
+        console.log("Session ID updated:", this.currentSessionId);
+      }
 
       const assistantMessage: Message = {
         id: generateUniqueId(),

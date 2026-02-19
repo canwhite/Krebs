@@ -11,6 +11,7 @@ import type {
 } from "@/types/index.js";
 import type { LLMProvider, ProviderConfig } from "./base.js";
 import type { Tool } from "@/agent/tools/index.js";
+import { isContextOverflowError } from "@/agent/errors.js";
 
 export class AnthropicProvider implements LLMProvider {
   readonly name = "anthropic";
@@ -38,56 +39,86 @@ export class AnthropicProvider implements LLMProvider {
       input_schema: tool.inputSchema as any, // Type assertion: our tools conform to Anthropic's format
     }));
 
-    const response = await this.client.messages.create({
-      model: options.model,
-      messages: messages
-        .filter((m) => m.role !== "system")
-        .map((m) => ({
-          role: m.role as "user" | "assistant",
-          content: m.content,
-        })),
-      system: messages.find((m) => m.role === "system")?.content,
-      max_tokens: options.maxTokens ?? 4096,
-      temperature: options.temperature,
-      tools: anthropicTools && anthropicTools.length > 0 ? anthropicTools : undefined,
-    });
+    // 自动重试机制（针对上下文溢出错误）
+    let lastError: Error | null = null;
+    const maxRetries = 2;
 
-    // 检查是否有 tool_use
-    const toolUseBlocks = response.content.filter((block) => block.type === "tool_use");
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await this.client.messages.create({
+          model: options.model,
+          messages: messages
+            .filter((m) => m.role !== "system")
+            .map((m) => ({
+              role: m.role as "user" | "assistant",
+              content: m.content,
+            })),
+          system: messages.find((m) => m.role === "system")?.content,
+          max_tokens: options.maxTokens ?? 4096,
+          temperature: options.temperature,
+          tools: anthropicTools && anthropicTools.length > 0 ? anthropicTools : undefined,
+        });
 
-    if (toolUseBlocks.length > 0) {
-      // 有工具调用
-      const toolCalls = toolUseBlocks.map((block: any) => ({
-        id: block.id,
-        name: block.name,
-        arguments: block.input,
-      }));
+        // 检查是否有 tool_use
+        const toolUseBlocks = response.content.filter((block) => block.type === "tool_use");
 
-      return {
-        content: "",
-        toolCalls,
-        usage: {
-          promptTokens: response.usage.input_tokens,
-          completionTokens: response.usage.output_tokens,
-          totalTokens:
-            response.usage.input_tokens + response.usage.output_tokens,
-        },
-      };
+        if (toolUseBlocks.length > 0) {
+          // 有工具调用
+          const toolCalls = toolUseBlocks.map((block: any) => ({
+            id: block.id,
+            name: block.name,
+            arguments: block.input,
+          }));
+
+          return {
+            content: "",
+            toolCalls,
+            usage: {
+              promptTokens: response.usage.input_tokens,
+              completionTokens: response.usage.output_tokens,
+              totalTokens:
+                response.usage.input_tokens + response.usage.output_tokens,
+            },
+          };
+        }
+
+        // 普通文本响应
+        const content =
+          response.content[0]?.type === "text" ? response.content[0].text : "";
+
+        return {
+          content,
+          usage: {
+            promptTokens: response.usage.input_tokens,
+            completionTokens: response.usage.output_tokens,
+            totalTokens:
+              response.usage.input_tokens + response.usage.output_tokens,
+          },
+        };
+
+      } catch (error: any) {
+        lastError = error;
+        const errorMessage = error?.message || String(error);
+
+        // 检查是否为上下文溢出错误
+        if (isContextOverflowError(errorMessage) && attempt < maxRetries) {
+          console.warn(
+            `[Anthropic] Context overflow detected (attempt ${attempt + 1}/${maxRetries + 1}), ` +
+            `please compress messages and retry. Error: ${errorMessage}`
+          );
+
+          // 等待一小段时间后重试
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          continue;
+        }
+
+        // 其他错误直接抛出
+        throw error;
+      }
     }
 
-    // 普通文本响应
-    const content =
-      response.content[0]?.type === "text" ? response.content[0].text : "";
-
-    return {
-      content,
-      usage: {
-        promptTokens: response.usage.input_tokens,
-        completionTokens: response.usage.output_tokens,
-        totalTokens:
-          response.usage.input_tokens + response.usage.output_tokens,
-      },
-    };
+    // 所有重试都失败
+    throw lastError || new Error("Max retries exceeded");
   }
 
   async chatStream(

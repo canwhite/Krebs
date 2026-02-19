@@ -34,6 +34,9 @@ import {
   ToolErrorKind,
   classifyToolError,
 } from "../errors.js";
+import { estimateMessagesTokens } from "@/utils/token-estimator.js";
+import { compactMessages } from "@/utils/compaction.js";
+import { getModelContextWindow } from "@/utils/model-context.js";
 
 export interface AgentDeps {
   provider: LLMProvider;
@@ -90,6 +93,7 @@ export class Agent {
   ): Promise<AgentResult> {
     // 加载历史消息
     const history = await this.loadHistory(sessionId);
+    console.log(`[Agent] Loaded ${history.length} messages from session "${sessionId}"`);
 
     // ========== 新增：自动注入相关记忆 ==========
     let messagesForLLM: Message[];
@@ -168,6 +172,7 @@ export class Agent {
 
     // Tool Calling 循环
     let currentMessages = [...messagesForLLM];
+    console.log(`[Agent] Starting Tool Calling loop with ${currentMessages.length} messages`);
     let iteration = 0;
     const allMessages: Message[] = []; // 保存所有中间消息（用于最终保存）
     const allToolResults: any[] = []; // 收集所有工具结果（用于构建 Payload）
@@ -290,8 +295,11 @@ export class Agent {
         ...allMessages,
       ];
 
+      console.log(`[Agent] Saving ${messagesToSave.length} messages to session "${sessionId}"`);
+
       // 自动压缩上下文（如果需要）
       const compressedMessages = await this.compactIfNeeded(messagesToSave);
+      console.log(`[Agent] After compression: ${compressedMessages.length} messages`);
       await this.saveHistory(sessionId, compressedMessages);
 
       // ========== 新增：自动保存对话到记忆系统 ==========
@@ -567,48 +575,47 @@ export class Agent {
   /**
    * 上下文压缩（如果需要）
    *
-   * 保留最近的消息，删除旧的消息以控制上下文长度
+   * 使用智能压缩策略：历史修剪 + 摘要生成
    */
   private async compactIfNeeded(messages: Message[]): Promise<Message[]> {
-    const maxTokens = this.config.maxTokens || 4096;
-    const estimatedTokens = this.estimateTokens(messages);
+    // 获取模型的实际上下文窗口
+    const modelName = this.config.model || "claude-3-5-sonnet-20241022";
+    const modelContextWindow = getModelContextWindow(modelName);
 
-    // 如果未超过限制，直接返回
-    if (estimatedTokens <= maxTokens * 0.8) {
-      return messages;
+    // 使用配置的 maxTokens 和模型上下文窗口的较小值
+    const maxTokens = Math.min(
+      this.config.maxTokens || modelContextWindow,
+      modelContextWindow
+    );
+
+    // 使用新的智能压缩工具
+    const result = compactMessages(messages, {
+      maxTokens,
+      maxHistoryShare: 0.8, // 历史消息最多占 80%
+      keepRecentCount: 20, // 保留最近 20 条消息
+      enableSummarization: true, // 启用摘要
+    });
+
+    // 如果压缩了，记录日志
+    if (result.droppedMessages > 0) {
+      console.log(
+        `[Agent] Context compressed: ${result.tokensBefore} → ${result.tokensAfter} tokens, ` +
+        `dropped ${result.droppedMessages} messages`
+      );
     }
 
-    console.log(`[Agent] Context length (${estimatedTokens} tokens) exceeds limit, compressing...`);
-
-    // 策略1: 保留最近的消息（简单版）
-    // TODO: 未来可以实现更智能的压缩（如语义总结）
-    const recentMessages = messages.slice(-20); // 保留最近20条消息
-
-    console.log(`[Agent] Compressed from ${messages.length} to ${recentMessages.length} messages`);
-
-    return recentMessages;
+    return result.messages;
   }
 
   /**
    * 估算消息的 token 数量
    *
-   * 简单估算：英文约 4 chars/token，中文约 2 chars/token
+   * 使用改进的估算算法（区分中英文）
    */
   private estimateTokens(messages: Message[]): number {
-    let totalChars = 0;
-
-    for (const message of messages) {
-      // 消息内容
-      totalChars += String(message.content || "").length;
-
-      // 工具调用
-      if (message.toolCalls) {
-        totalChars += JSON.stringify(message.toolCalls).length;
-      }
-    }
-
-    // 保守估算：平均 3 字符 = 1 token
-    return Math.ceil(totalChars / 3);
+    return estimateMessagesTokens(messages, {
+      safetyMargin: 1.2, // 20% buffer
+    });
   }
 
   private async loadHistory(sessionId: string): Promise<Message[]> {

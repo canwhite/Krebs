@@ -12,6 +12,7 @@ import type {
 } from "@/types/index.js";
 import type { LLMProvider, ProviderConfig } from "./base.js";
 import type { Tool } from "@/agent/tools/index.js";
+import { isContextOverflowError } from "@/agent/errors.js";
 
 export class DeepSeekProvider implements LLMProvider {
   readonly name = "deepseek";
@@ -42,62 +43,92 @@ export class DeepSeekProvider implements LLMProvider {
       },
     }));
 
-    const response = await this.client.chat.completions.create({
-      model: options.model,
-      messages: messages.map((m) => ({
-        role: m.role,
-        content: m.content,
-      })),
-      temperature: options.temperature,
-      max_tokens: options.maxTokens,
-      tools: openaiTools && openaiTools.length > 0 ? openaiTools : undefined,
-    });
+    // 自动重试机制（针对上下文溢出错误）
+    let lastError: Error | null = null;
+    const maxRetries = 2;
 
-    const message = response.choices[0]?.message;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await this.client.chat.completions.create({
+          model: options.model,
+          messages: messages.map((m) => ({
+            role: m.role,
+            content: m.content,
+          })),
+          temperature: options.temperature,
+          max_tokens: options.maxTokens,
+          tools: openaiTools && openaiTools.length > 0 ? openaiTools : undefined,
+        });
 
-    // 检查是否有 tool_calls
-    if (message?.tool_calls && message.tool_calls.length > 0) {
-      const toolCalls = message.tool_calls.map((tc) => {
-        try {
-          return {
-            id: tc.id,
-            name: tc.function.name,
-            arguments: JSON.parse(tc.function.arguments),
-          };
-        } catch (error) {
-          console.error('[DeepSeek] Failed to parse tool arguments:', {
-            toolName: tc.function.name,
-            arguments: tc.function.arguments,
-            argumentsLength: tc.function.arguments?.length,
-            error: error instanceof Error ? error.message : error
+        const message = response.choices[0]?.message;
+
+        // 检查是否有 tool_calls
+        if (message?.tool_calls && message.tool_calls.length > 0) {
+          const toolCalls = message.tool_calls.map((tc) => {
+            try {
+              return {
+                id: tc.id,
+                name: tc.function.name,
+                arguments: JSON.parse(tc.function.arguments),
+              };
+            } catch (error) {
+              console.error('[DeepSeek] Failed to parse tool arguments:', {
+                toolName: tc.function.name,
+                arguments: tc.function.arguments,
+                argumentsLength: tc.function.arguments?.length,
+                error: error instanceof Error ? error.message : error
+              });
+              throw new Error(
+                `Failed to parse arguments for tool ${tc.function.name}: ${error instanceof Error ? error.message : 'Unknown error'}`
+              );
+            }
           });
-          throw new Error(
-            `Failed to parse arguments for tool ${tc.function.name}: ${error instanceof Error ? error.message : 'Unknown error'}`
-          );
-        }
-      });
 
-      return {
-        content: "",
-        toolCalls,
-        usage: {
-          promptTokens: response.usage?.prompt_tokens ?? 0,
-          completionTokens: response.usage?.completion_tokens ?? 0,
-          totalTokens: response.usage?.total_tokens ?? 0,
-        },
-      };
+          return {
+            content: "",
+            toolCalls,
+            usage: {
+              promptTokens: response.usage?.prompt_tokens ?? 0,
+              completionTokens: response.usage?.completion_tokens ?? 0,
+              totalTokens: response.usage?.total_tokens ?? 0,
+            },
+          };
+        }
+
+        const content = message?.content ?? "";
+
+        return {
+          content,
+          usage: {
+            promptTokens: response.usage?.prompt_tokens ?? 0,
+            completionTokens: response.usage?.completion_tokens ?? 0,
+            totalTokens: response.usage?.total_tokens ?? 0,
+          },
+        };
+
+      } catch (error: any) {
+        lastError = error;
+        const errorMessage = error?.message || String(error);
+
+        // 检查是否为上下文溢出错误
+        if (isContextOverflowError(errorMessage) && attempt < maxRetries) {
+          console.warn(
+            `[DeepSeek] Context overflow detected (attempt ${attempt + 1}/${maxRetries + 1}), ` +
+            `please compress messages and retry. Error: ${errorMessage}`
+          );
+
+          // 等待一小段时间后重试
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          continue;
+        }
+
+        // 其他错误直接抛出
+        throw error;
+      }
     }
 
-    const content = message?.content ?? "";
-
-    return {
-      content,
-      usage: {
-        promptTokens: response.usage?.prompt_tokens ?? 0,
-        completionTokens: response.usage?.completion_tokens ?? 0,
-        totalTokens: response.usage?.total_tokens ?? 0,
-      },
-    };
+    // 所有重试都失败
+    throw lastError || new Error("Max retries exceeded");
   }
 
   async chatStream(
