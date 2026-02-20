@@ -540,5 +540,18 @@ function buildToolCallingGuidance(toolConfig?: ToolConfig): string {
 4. **Maximum iterations**: You can make up to ${maxIterations} tool calls per user message
 5. **Stop when done**: Don't make unnecessary tool calls - stop when the task is complete
 6. **Handle errors gracefully**: If a tool call fails, try to understand the error and adjust your approach
-7. **Be efficient**: Combine related operations when possible to minimize tool calls`;
+7. **Be efficient**: Combine related operations when possible to minimize tool calls
+
+**IMPORTANT - When to stop tool calling:**
+- For content display/formatting tasks (e.g., "display these formulas", "show this content"):
+  → First check if tools are actually needed
+  → If the content is already provided in the user message, just format and display it directly
+  → Only use tools if you need to read/write files as explicitly requested
+- After a successful tool operation:
+  → If the task is complete, generate your final text response immediately
+  → DO NOT make additional tool calls unless necessary
+  → Remember: Your goal is to HELP the user, not to maximize tool usage
+- Avoid repetitive tool calls:
+  → If a tool call succeeds, don't call the same tool again with similar parameters
+  → If you find yourself making multiple similar calls, stop and reassess your approach`;
 }
