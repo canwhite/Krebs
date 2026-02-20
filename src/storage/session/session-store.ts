@@ -405,7 +405,7 @@ export class SessionStore {
         role,
         content: actualContent,
         ...(toolCalls ? { toolCalls } : {}),
-        timestamp: Date.now(),
+        // 不添加 timestamp，因为文件中没有存储
       } as Message);
     }
 

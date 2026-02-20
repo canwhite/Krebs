@@ -37,6 +37,7 @@ import {
 import { estimateMessagesTokens } from "@/utils/token-estimator.js";
 import { compactMessages } from "@/utils/compaction.js";
 import { getModelContextWindow } from "@/utils/model-context.js";
+import { summarizeMessages } from "@/utils/summarization.js";
 
 export interface AgentDeps {
   provider: LLMProvider;
@@ -103,17 +104,21 @@ export class Agent {
       console.log(`  [${i}] role=${msg.role}, content="${msg.content?.substring(0, 50)}${msg.content && msg.content.length > 50 ? '...' : ''}"`);
     });
 
+    // ========== 智能上下文压缩 ==========
+    // 检查是否需要压缩历史消息（保留最近的消息，旧消息用摘要代替）
+    const compressedHistory = await this.compressHistoryIfNeeded(history);
+
     // ========== 新增：自动注入相关记忆 ==========
     let messagesForLLM: Message[];
 
     if (this.deps.memoryService) {
       try {
         // 1. 提取最近的消息用于搜索查询
-        const recentMessages = history.slice(-5); // 最近 5 条消息
+        const recentMessages = compressedHistory.slice(-5); // 最近 5 条消息
 
-        // 2. 构建完整的消息列表（历史 + 当前用户消息）
+        // 2. 构建完整的消息列表（压缩后的历史 + 当前用户消息）
         const fullMessages = [
-          ...history,
+          ...compressedHistory,
           {
             role: "user",
             content: userMessage,
@@ -138,7 +143,7 @@ export class Agent {
                 },
               ]
             : []),
-          ...enhanced, // 使用增强后的消息（包含历史 + 记忆注入）
+          ...enhanced, // 使用增强后的消息（包含压缩后的历史 + 记忆注入）
         ];
       } catch (error) {
         // 记忆注入失败，降级到普通流程
@@ -622,7 +627,7 @@ export class Agent {
       maxTokens,
       maxHistoryShare: 0.8, // 历史消息最多占 80%
       keepRecentCount: 20, // 保留最近 20 条消息
-      enableSummarization: true, // 启用摘要
+      enableSummarization: true, // 启用简单摘要（统计型）
     });
 
     // 如果压缩了，记录日志
@@ -634,6 +639,72 @@ export class Agent {
     }
 
     return result.messages;
+  }
+
+  /**
+   * 智能历史压缩（使用 LLM 生成摘要）
+   *
+   * 参考 openclaw-cn-ds 的设计：
+   * - 将旧对话摘要为紧凑条目
+   * - 保留最近的消息（完整）
+   * - 使用 LLM 生成智能摘要
+   */
+  private async compressHistoryIfNeeded(history: Message[]): Promise<Message[]> {
+    // 配置参数
+    const keepRecentCount = 15; // 保留最近 15 条完整消息
+    const summaryThreshold = 30; // 超过 30 条消息才触发压缩
+    const maxHistoryTokens = 8000; // 历史消息的最大 token 数
+
+    // 如果消息数量未达到阈值，直接返回
+    if (history.length <= summaryThreshold) {
+      return history;
+    }
+
+    // 估算历史消息的 token 数
+    const estimatedTokens = estimateMessagesTokens(history);
+
+    // 如果未超过 token 限制，直接返回
+    if (estimatedTokens <= maxHistoryTokens) {
+      return history;
+    }
+
+    console.log(
+      `[Agent] History compression triggered: ${history.length} messages, ${estimatedTokens} tokens`
+    );
+
+    // 分割消息：旧消息（需要摘要）+ 最近消息（保留完整）
+    const oldMessages = history.slice(0, -keepRecentCount);
+    const recentMessages = history.slice(-keepRecentCount);
+
+    // 使用 LLM 生成智能摘要
+    try {
+      const summaryResult = await summarizeMessages(this.deps.provider, oldMessages, {
+        maxTokens: 1000, // 摘要最多 1000 tokens
+        detail: "balanced", // 平衡模式
+        focus: "all", // 包含所有信息
+        includeTimestamps: false, // 不包含时间戳
+      });
+
+      // 构建摘要消息
+      const summaryMessage: Message = {
+        role: "system",
+        content: `[历史对话摘要]\n${summaryResult.summary}\n\n[以上是之前对话的摘要，以下是最近的完整对话]`,
+        timestamp: Date.now(),
+      };
+
+      console.log(
+        `[Agent] Generated summary: ${oldMessages.length} messages → ${summaryResult.summary.length} chars (~${summaryResult.estimatedTokens} tokens)`
+      );
+
+      // 返回：摘要 + 最近消息
+      return [summaryMessage, ...recentMessages];
+    } catch (error) {
+      // 摘要生成失败，降级到简单修剪
+      console.warn("[Agent] Failed to generate summary, falling back to simple pruning:", error);
+
+      // 使用 compactIfNeeded 作为降级方案
+      return this.compactIfNeeded(history);
+    }
   }
 
   /**
