@@ -104,21 +104,17 @@ export class Agent {
       console.log(`  [${i}] role=${msg.role}, content="${msg.content?.substring(0, 50)}${msg.content && msg.content.length > 50 ? '...' : ''}"`);
     });
 
-    // ========== 智能上下文压缩 ==========
-    // 检查是否需要压缩历史消息（保留最近的消息，旧消息用摘要代替）
-    const compressedHistory = await this.compressHistoryIfNeeded(history);
-
     // ========== 新增：自动注入相关记忆 ==========
     let messagesForLLM: Message[];
 
     if (this.deps.memoryService) {
       try {
-        // 1. 提取最近的消息用于搜索查询
-        const recentMessages = compressedHistory.slice(-5); // 最近 5 条消息
+        // 1. 提取最近的消息用于搜索查询（基于完整历史）
+        const recentMessages = history.slice(-5); // 最近 5 条消息
 
-        // 2. 构建完整的消息列表（压缩后的历史 + 当前用户消息）
+        // 2. 构建完整的消息列表（完整历史 + 当前用户消息）
         const fullMessages = [
-          ...compressedHistory,
+          ...history,
           {
             role: "user",
             content: userMessage,
@@ -126,13 +122,17 @@ export class Agent {
           },
         ];
 
-        // 3. 自动注入相关记忆（注意：injectRelevantMemories 只会在前面插入记忆，不会移除消息）
+        // 3. 自动注入相关记忆（基于完整历史）
         const enhanced = await this.deps.memoryService.injectRelevantMemories(
           fullMessages,
           recentMessages
         );
 
-        // 4. 添加 system prompt
+        // 4. ========== 智能上下文压缩（在记忆注入之后）==========
+        // 现在压缩 enhancedMessages（包含记忆注入的结果）
+        const compressedEnhanced = await this.compressHistoryIfNeeded(enhanced);
+
+        // 5. 添加 system prompt
         messagesForLLM = [
           ...(this.config.systemPrompt
             ? [
@@ -143,11 +143,13 @@ export class Agent {
                 },
               ]
             : []),
-          ...enhanced, // 使用增强后的消息（包含压缩后的历史 + 记忆注入）
+          ...compressedEnhanced, // 使用压缩后的增强消息
         ];
       } catch (error) {
         // 记忆注入失败，降级到普通流程
         console.warn("[Agent] Memory injection failed, falling back to normal flow:", error);
+        // 即使降级，也要尝试压缩
+        const compressedHistory = await this.compressHistoryIfNeeded(history);
         messagesForLLM = [
           ...(this.config.systemPrompt
             ? [
@@ -158,7 +160,7 @@ export class Agent {
                 },
               ]
             : []),
-          ...history,
+          ...compressedHistory,
           {
             role: "user",
             content: userMessage,
@@ -167,7 +169,9 @@ export class Agent {
         ];
       }
     } else {
-      // 没有 MemoryService，使用普通流程
+      // 没有 MemoryService，直接压缩历史
+      const compressedHistory = await this.compressHistoryIfNeeded(history);
+
       messagesForLLM = [
         ...(this.config.systemPrompt
           ? [
@@ -178,7 +182,7 @@ export class Agent {
               },
             ]
           : []),
-        ...history,
+        ...compressedHistory,
         {
           role: "user",
           content: userMessage,

@@ -32,6 +32,11 @@ export interface SummarizationOptions {
    * 是否包含时间戳
    */
   includeTimestamps?: boolean;
+
+  /**
+   * 是否启用增量摘要（默认启用）
+   */
+  enableIncremental?: boolean;
 }
 
 /**
@@ -57,20 +62,26 @@ export interface SummarizationResult {
    * 生成时间
    */
   generatedAt: number;
+
+  /**
+   * 新消息数量（仅在增量摘要时有效）
+   */
+  newMessagesCount?: number;
 }
 
 /**
- * 摘要缓存条目
+ * 摘要缓存条目（增强版，支持增量摘要）
  */
 interface CacheEntry {
   summary: string;
   messagesHash: string;
+  messageCount: number;  // 记录摘要覆盖的消息数量
   generatedAt: number;
   expiresAt: number;
 }
 
 /**
- * 摘要缓存类
+ * 摘要缓存类（增强版，支持增量摘要）
  */
 class SummaryCache {
   private cache = new Map<string, CacheEntry>();
@@ -116,10 +127,29 @@ class SummaryCache {
     const entry: CacheEntry = {
       summary,
       messagesHash: key,
+      messageCount: messages.length,  // 记录消息数量
       generatedAt: Date.now(),
       expiresAt: Date.now() + this.ttl,
     };
     this.cache.set(key, entry);
+  }
+
+  /**
+   * 获取最近的缓存条目（用于增量摘要）
+   */
+  getLastEntry(): CacheEntry | null {
+    // 找到最新的缓存条目
+    let latestEntry: CacheEntry | null = null;
+    let latestTime = 0;
+
+    for (const entry of this.cache.values()) {
+      if (entry.generatedAt > latestTime && Date.now() < entry.expiresAt) {
+        latestEntry = entry;
+        latestTime = entry.generatedAt;
+      }
+    }
+
+    return latestEntry;
   }
 
   /**
@@ -198,7 +228,7 @@ function buildSummaryPrompt(
 }
 
 /**
- * 使用 LLM 生成摘要
+ * 使用 LLM 生成智能摘要（支持增量摘要）
  *
  * @param provider - LLM Provider
  * @param messages - 要摘要的消息列表
@@ -210,7 +240,18 @@ export async function summarizeMessages(
   messages: Message[],
   options: SummarizationOptions = {}
 ): Promise<SummarizationResult> {
-  // 检查缓存
+  const enableIncremental = options.enableIncremental !== false;
+
+  // 尝试增量摘要（如果启用）
+  if (enableIncremental) {
+    const incrementalResult = await trySummarizeIncrementally(provider, messages, options);
+    if (incrementalResult) {
+      console.log(`[Summarization] Incremental summary: ${messages.length} messages → reused existing summary + ${incrementalResult.newMessagesCount} new messages summarized`);
+      return incrementalResult;
+    }
+  }
+
+  // 检查缓存（传统模式）
   const cached = globalSummaryCache.get(messages);
   if (cached) {
     console.log(`[Summarization] Cache hit for ${messages.length} messages`);
@@ -253,6 +294,89 @@ export async function summarizeMessages(
     estimatedTokens: estimateMessagesTokens([{ content: summary }]),
     generatedAt: Date.now(),
   };
+}
+
+/**
+ * 尝试增量摘要（只摘要新增部分）
+ *
+ * @param provider - LLM Provider
+ * @param messages - 完整的消息列表
+ * @param options - 摘要选项
+ * @returns 摘要结果（如果成功）或 null（如果没有可复用的摘要）
+ */
+async function trySummarizeIncrementally(
+  provider: LLMProvider,
+  messages: Message[],
+  options: SummarizationOptions
+): Promise<SummarizationResult | null> {
+  // 查找最近的缓存条目
+  const lastCache = globalSummaryCache.getLastEntry();
+
+  if (!lastCache) {
+    return null; // 没有可复用的摘要
+  }
+
+  // 计算新增的消息数量
+  const lastMessageCount = lastCache.messageCount;
+  const newMessagesCount = messages.length - lastMessageCount;
+
+  // 如果没有新增消息，或者新增消息太少，直接使用旧摘要
+  if (newMessagesCount <= 0) {
+    console.log(`[Summarization] No new messages, reusing existing summary`);
+    return {
+      summary: lastCache.summary,
+      originalMessageCount: messages.length,
+      estimatedTokens: estimateMessagesTokens([{ content: lastCache.summary }]),
+      generatedAt: lastCache.generatedAt,
+    };
+  }
+
+  // 如果新增消息较少（< 10条），直接使用旧摘要，不重新生成
+  if (newMessagesCount < 10) {
+    console.log(`[Summarization] Few new messages (${newMessagesCount}), reusing existing summary`);
+    return {
+      summary: lastCache.summary,
+      originalMessageCount: messages.length,
+      estimatedTokens: estimateMessagesTokens([{ content: lastCache.summary }]),
+      generatedAt: lastCache.generatedAt,
+    };
+  }
+
+  // 新增消息较多，生成增量摘要
+  const newMessages = messages.slice(lastMessageCount);
+  console.log(`[Summarization] Generating incremental summary for ${newMessagesCount} new messages`);
+
+  try {
+    // 只摘要新增的消息
+    const newSummaryResult = await summarizeMessages(provider, newMessages, {
+      ...options,
+      enableIncremental: false, // 禁用递归
+    });
+
+    // 合并摘要（简单拼接）
+    const mergedSummary = mergeSummaries(lastCache.summary, newSummaryResult.summary);
+
+    // 更新缓存
+    globalSummaryCache.set(messages, mergedSummary);
+
+    return {
+      summary: mergedSummary,
+      originalMessageCount: messages.length,
+      estimatedTokens: estimateMessagesTokens([{ content: mergedSummary }]),
+      generatedAt: Date.now(),
+      newMessagesCount,  // 添加新增消息数量
+    };
+  } catch (error) {
+    console.warn("[Summarization] Incremental summary failed, falling back to full summary:", error);
+    return null;
+  }
+}
+
+/**
+ * 合并两个摘要
+ */
+function mergeSummaries(oldSummary: string, newSummary: string): string {
+  return `${oldSummary}\n\n[后续对话摘要]\n${newSummary}`;
 }
 
 /**
