@@ -1,7 +1,15 @@
 import { LitElement, html, css } from 'lit';
 import { property, state, customElement } from 'lit/decorators.js';
 import { marked } from 'marked';
+import markedKatexExtension from 'marked-katex-extension';
 import DOMPurify from 'dompurify';
+import 'katex/dist/katex.min.css';
+
+// Configure marked to use KaTeX for math rendering
+marked.use(markedKatexExtension({
+  throwOnError: false,
+  nonStandard: true,
+}));
 
 /**
  * Markdown Component with Copy Buttons
@@ -200,6 +208,28 @@ export class KrebsMarkdown extends LitElement {
 
     .markdown-content pre code {
       color: inherit;
+    }
+
+    /* KaTeX Math Styles */
+    .markdown-content .katex {
+      font-size: 1.1em;
+    }
+
+    .markdown-content .katex-display {
+      margin: 1em 0;
+      overflow-x: auto;
+      overflow-y: hidden;
+    }
+
+    /* User message theme - KaTeX adjustments */
+    :host([is-user="true"]) .markdown-content .katex {
+      color: #ffffff;
+    }
+
+    :host([is-user="true"]) .markdown-content .katex-display {
+      background-color: rgba(0, 0, 0, 0.2);
+      padding: 8px;
+      border-radius: 4px;
     }
 
     /* User message styles - light theme for markdown */

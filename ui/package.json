@@ -11,9 +11,11 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
+    "dompurify": "^3.3.1",
+    "katex": "^0.16.28",
     "lit": "^3.3.2",
     "marked": "^17.0.1",
-    "dompurify": "^3.3.1"
+    "marked-katex-extension": "^5.1.7"
   },
   "devDependencies": {
     "@types/dompurify": "^3.0.5",
