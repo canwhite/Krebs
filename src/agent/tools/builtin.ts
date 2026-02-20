@@ -369,7 +369,7 @@ export function getBuiltinTools(
   getDisplayName?: () => string,
   getRegistry?: () => any,
 ): Tool[] {
-  const tools = [bashTool, readTool, writeTool, editTool, webSearchTool, webFetchTool];
+  const tools = [bashTool, readTool, writeTool, editTool];
 
   // spawn_subagent 工具始终包含在列表中
   // 但执行时会检查依赖是否可用
@@ -387,6 +387,9 @@ export function getBuiltinTools(
       ),
     );
   }
+
+  // 将 web 工具放在最后
+  tools.push(webFetchTool, webSearchTool);
 
   return tools;
 }
