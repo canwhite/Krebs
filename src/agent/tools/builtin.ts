@@ -176,16 +176,21 @@ export const readTool: Tool = {
  * Write 工具
  *
  * 写入文件内容
+ *
+ * 路径处理规则：
+ * - 绝对路径：直接使用（如 /tmp/test.md）
+ * - 显式相对路径：直接使用（如 ./docs/test.md 或 ../test.md）
+ * - 纯文件名：自动保存到 data/tasks/（如 test.md → data/tasks/test.md）
  */
 export const writeTool: Tool = {
   name: "write_file",
-  description: "Write content to a file. Creates the file if it doesn't exist, overwrites if it does.",
+  description: "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. If a simple filename is provided (without path separators), it will be saved to data/tasks/ directory.",
   inputSchema: {
     type: "object",
     properties: {
       path: {
         type: "string",
-        description: "The path to the file to write",
+        description: "The path to the file to write. Absolute paths, explicit relative paths (./ or ../), or simple filenames (which will be saved to data/tasks/)",
       },
       content: {
         type: "string",
@@ -196,7 +201,7 @@ export const writeTool: Tool = {
   },
 
   async execute(params): Promise<{ success: boolean; error?: string }> {
-    const filePath = params.path as string;
+    let filePath = params.path as string;
     const content = params.content as string;
 
     if (!filePath || typeof filePath !== "string") {
@@ -214,6 +219,14 @@ export const writeTool: Tool = {
     }
 
     try {
+      // 处理路径：如果是纯文件名（不含路径分隔符），添加 data/tasks/ 前缀
+      if (!filePath.includes("/") && !filePath.includes("\\")) {
+        // 纯文件名，保存到 data/tasks/
+        filePath = path.join("data", "tasks", filePath);
+        logger.debug(`Simple filename detected, saving to tasks directory: ${filePath}`);
+      }
+      // 其他情况（绝对路径、显式相对路径）保持不变
+
       // 确保目录存在
       const dir = path.dirname(filePath);
       await fs.mkdir(dir, { recursive: true });
