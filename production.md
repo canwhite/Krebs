@@ -77,6 +77,7 @@ index.ts (主入口)
 
 ```
 Krebs/
+├── API.md              # API 接口文档（完整）
 ├── src/
 │   ├── agent/           # Agent 核心实现
 │   │   ├── core/        # 核心 Agent 类
