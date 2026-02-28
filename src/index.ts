@@ -73,6 +73,30 @@ async function startServer() {
   setConcurrency(CommandLane.Main, 1);
   setConcurrency(CommandLane.Cron, 1);
 
+  // 验证至少有一个有效的 API Key
+  const hasDeepSeekKey = !!config.providers.deepseek?.apiKey;
+  const hasAnthropicKey = !!config.providers.anthropic?.apiKey;
+  const hasOpenAIKey = !!config.providers.openai?.apiKey;
+
+  if (!hasDeepSeekKey && !hasAnthropicKey && !hasOpenAIKey) {
+    logger.error(`
+❌ 错误：未配置任何 API Key！
+
+ Krebs CN 需要至少配置以下其中一个 API Key 才能运行：
+   • DEEPSEEK_API_KEY
+   • ANTHROPIC_API_KEY
+   • OPENAI_API_KEY
+
+ 请在 .env 文件中配置至少一个 API Key，例如：
+   DEEPSEEK_API_KEY=your_deepseek_api_key_here
+
+ 或在 docker-compose.yml 的 environment 部分配置对应的环境变量。
+
+ 容器即将停止...
+    `);
+    process.exit(1);
+  }
+
   // 初始化 Provider（优先级：DeepSeek > Anthropic > OpenAI）
   let provider;
   const defaultProvider = config.agent.defaultProvider ?? "deepseek";
@@ -118,8 +142,6 @@ async function startServer() {
         apiKey: config.providers.openai.apiKey,
         baseUrl: config.providers.openai.baseUrl,
       });
-    } else {
-      logger.warn("未配置任何 API Key，某些功能将不可用");
     }
   }
 

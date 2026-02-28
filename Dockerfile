@@ -50,9 +50,12 @@ COPY --from=build --chown=krebs:krebs /app/node_modules ./node_modules
 COPY --from=build --chown=krebs:krebs /app/dist ./dist
 COPY --from=build --chown=krebs:krebs /app/package*.json ./
 
+# 复制 skills 目录
+COPY --from=build --chown=krebs:krebs /app/skills ./skills
+
 # 创建数据目录
-RUN mkdir -p /app/data /app/data/memory && \
-    chown -R krebs:krebs /app/data
+RUN mkdir -p /app/data /app/data/memory /app/temp /app/workspace/skills && \
+    chown -R krebs:krebs /app/data /app/temp /app/workspace
 
 # 切换到非 root 用户
 USER krebs
