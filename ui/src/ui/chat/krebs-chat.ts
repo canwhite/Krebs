@@ -90,6 +90,13 @@ export class KrebsChat extends LitElement {
       border: 1px solid var(--color-border);
     }
 
+    .message-body {
+      flex: 1;
+      display: flex;
+      gap: 8px;
+      min-width: 0;
+    }
+
     .message-content {
       flex: 1;
       padding: var(--spacing-md);
@@ -97,7 +104,7 @@ export class KrebsChat extends LitElement {
       background-color: var(--color-surface);
       border: 1px solid var(--color-border);
       overflow-x: auto;
-      min-width: 0; /* Prevent overflow issues */
+      min-width: 0;
     }
 
     .message.user .message-content {
@@ -109,6 +116,15 @@ export class KrebsChat extends LitElement {
     .message-content img {
       max-width: 100%;
       border-radius: var(--radius-md);
+    }
+
+    .tool-sidebar {
+      width: 60px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 4px 0;
     }
 
     .tool-calls {
@@ -302,6 +318,11 @@ export class KrebsChat extends LitElement {
 
       .message-content {
         padding: var(--spacing-sm);
+      }
+
+      .tool-sidebar {
+        width: 48px;
+        gap: 4px;
       }
 
       button.new-session-button {
@@ -507,17 +528,23 @@ export class KrebsChat extends LitElement {
               <div class="message-avatar">
                 ${msg.role === "user" ? "U" : "AI"}
               </div>
-              <div class="message-content">
-                ${msg.role === "user"
-                  ? html`${msg.content}`
-                  : html`
-                      <krebs-markdown
-                        .content=${msg.content}
-                        .isUser=${false}
-                      ></krebs-markdown>
-                    `}
-                ${msg.toolCalls ? this.renderToolCalls(msg.toolCalls) : ""}
-              </div>
+              ${msg.role === "user" ? html`
+                <div class="message-content">
+                  ${msg.content}
+                </div>
+              ` : html`
+                <div class="message-body">
+                  <div class="message-content">
+                    <krebs-markdown
+                      .content=${msg.content}
+                      .isUser=${false}
+                    ></krebs-markdown>
+                  </div>
+                  ${msg.toolCalls && msg.toolCalls.length > 0 
+                    ? html`<div class="tool-sidebar">${this.renderToolSidebar(msg.toolCalls)}</div>` 
+                    : ''}
+                </div>
+              `}
             </div>
           `,
         )}
@@ -573,21 +600,18 @@ export class KrebsChat extends LitElement {
     `;
   }
 
-  private renderToolCalls(toolCalls: ToolCall[]) {
-    return html`
-      <div class="tool-calls">
-        ${toolCalls.map(
-          (tool) => html`
-            <krebs-tool-card
-              .name=${tool.name}
-              .args=${tool.args}
-              .result=${tool.result}
-              .status=${tool.status}
-            ></krebs-tool-card>
-          `,
-        )}
-      </div>
-    `;
+  private renderToolSidebar(toolCalls: ToolCall[]) {
+    return toolCalls.map(
+      (tool, index) => html`
+        <krebs-tool-chip
+          .name=${tool.name}
+          .args=${tool.args}
+          .result=${tool.result}
+          .status=${tool.status}
+          .index=${index}
+        ></krebs-tool-chip>
+      `,
+    );
   }
 
   private handleInput(e: Event) {
