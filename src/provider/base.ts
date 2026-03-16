@@ -29,7 +29,7 @@ export interface LLMProvider {
    */
   chatStream(
     messages: Message[],
-    options: ChatCompletionOptions,
+    options: ChatCompletionOptions & { tools?: any[] },
     onChunk: (chunk: string) => void
   ): Promise<ChatCompletionResult>;
 

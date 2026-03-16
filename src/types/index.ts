@@ -22,6 +22,7 @@ export interface ChatCompletionOptions {
 
 export interface ChatCompletionResult {
   content: string;
+  toolCalls?: any[]; // Tool calls from the LLM
   usage?: {
     promptTokens: number;
     completionTokens: number;
@@ -70,6 +71,7 @@ export interface AgentContext {
 export interface AgentResult {
   response: string;
   payloads?: any[];  // Payload[] - 新增：支持结构化结果
+  toolCalls?: any[]; // 工具调用信息
   usage?: {
     promptTokens: number;
     completionTokens: number;

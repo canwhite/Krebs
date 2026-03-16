@@ -17,7 +17,7 @@
 import type {
   AgentResult,
 } from "@/types/index.js";
-import type { Agent } from "./agent.js";
+import type { Agent, ToolCallEvent } from "./agent.js";
 import type { SkillsManager } from "../skills/index.js";
 
 /**
@@ -85,10 +85,11 @@ export class AgentOrchestrator {
   async processStream(
     userMessage: string,
     sessionId: string,
-    onChunk: (chunk: string) => void
+    onChunk: (chunk: string) => void,
+    onToolCall?: (event: ToolCallEvent) => void
   ): Promise<AgentResult> {
     // 流式处理直接委托给 Agent
-    return this.deps.agent.processStream(userMessage, sessionId, onChunk);
+    return this.deps.agent.processStream(userMessage, sessionId, onChunk, onToolCall);
   }
 
   /**

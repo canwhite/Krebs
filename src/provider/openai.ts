@@ -85,9 +85,19 @@ export class OpenAIProvider implements LLMProvider {
 
   async chatStream(
     messages: Message[],
-    options: ChatCompletionOptions,
+    options: ChatCompletionOptions & { tools?: any[] },
     onChunk: (chunk: string) => void
-  ): Promise<ChatCompletionResult> {
+  ): Promise<ChatCompletionResult & { toolCalls?: any[] }> {
+    // 转换工具格式为 OpenAI 格式
+    const openaiTools = options.tools?.map((tool) => ({
+      type: "function" as const,
+      function: {
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.inputSchema,
+      },
+    }));
+
     const stream = await this.client.chat.completions.create({
       model: options.model,
       messages: messages.map((m) => ({
@@ -97,26 +107,73 @@ export class OpenAIProvider implements LLMProvider {
       temperature: options.temperature,
       max_tokens: options.maxTokens,
       stream: true,
+      tools: openaiTools && openaiTools.length > 0 ? openaiTools : undefined,
     });
 
     let fullContent = "";
     let promptTokens = 0;
     let completionTokens = 0;
+    const toolCalls: any[] = [];
 
     for await (const chunk of stream) {
       const delta = chunk.choices[0]?.delta;
+
+      // 处理文本内容
       if (delta?.content) {
         fullContent += delta.content;
         onChunk(delta.content);
       }
+
+      // 处理工具调用
+      if (delta?.tool_calls) {
+        for (const toolCallDelta of delta.tool_calls) {
+          const index = toolCallDelta.index;
+
+          // 确保有足够的空间
+          while (toolCalls.length <= index) {
+            toolCalls.push({});
+          }
+
+          if (toolCallDelta.id) {
+            toolCalls[index].id = toolCallDelta.id;
+          }
+
+          if (toolCallDelta.type) {
+            toolCalls[index].type = toolCallDelta.type;
+          }
+
+          if (toolCallDelta.function?.name) {
+            toolCalls[index].name = toolCallDelta.function.name;
+          }
+
+          if (toolCallDelta.function?.arguments) {
+            if (!toolCalls[index].arguments) {
+              toolCalls[index].arguments = "";
+            }
+            toolCalls[index].arguments += toolCallDelta.function.arguments;
+          }
+        }
+      }
+
+      // 处理使用量信息
       if (chunk.usage) {
         promptTokens = chunk.usage.prompt_tokens;
         completionTokens = chunk.usage.completion_tokens;
       }
     }
 
+    // 解析工具调用参数
+    const parsedToolCalls = toolCalls
+      .filter((tc) => tc.name && tc.arguments)
+      .map((tc) => ({
+        id: tc.id,
+        name: tc.name,
+        arguments: JSON.parse(tc.arguments),
+      }));
+
     return {
       content: fullContent,
+      toolCalls: parsedToolCalls.length > 0 ? parsedToolCalls : undefined,
       usage: {
         promptTokens,
         completionTokens,

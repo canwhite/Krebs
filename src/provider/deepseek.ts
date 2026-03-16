@@ -133,9 +133,19 @@ export class DeepSeekProvider implements LLMProvider {
 
   async chatStream(
     messages: Message[],
-    options: ChatCompletionOptions,
+    options: ChatCompletionOptions & { tools?: any[] },
     onChunk: (chunk: string) => void
-  ): Promise<ChatCompletionResult> {
+  ): Promise<ChatCompletionResult & { toolCalls?: any[] }> {
+    // 转换工具格式为 DeepSeek/OpenAI 格式
+    const deepseekTools = options.tools?.map((tool) => ({
+      type: "function" as const,
+      function: {
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.inputSchema,
+      },
+    }));
+
     const stream = await this.client.chat.completions.create({
       model: options.model,
       messages: messages.map((m) => ({
@@ -145,26 +155,107 @@ export class DeepSeekProvider implements LLMProvider {
       temperature: options.temperature,
       max_tokens: options.maxTokens,
       stream: true,
+      tools: deepseekTools && deepseekTools.length > 0 ? deepseekTools : undefined,
     });
 
     let fullContent = "";
     let promptTokens = 0;
     let completionTokens = 0;
+    const toolCalls: any[] = [];
+    let chunkCount = 0;
+
+    console.log(`[DeepSeek] ============ chatStream START ============`);
+    console.log(`[DeepSeek] Model: ${options.model}`);
+    console.log(`[DeepSeek] Messages count: ${messages.length}`);
+    console.log(`[DeepSeek] User message: "${messages[messages.length - 1]?.content?.substring(0, 100)}..."`);
+    console.log(`[DeepSeek] Tools: ${deepseekTools?.length || 0}`);
+    if (deepseekTools) {
+      deepseekTools.forEach((t, i) => {
+        console.log(`[DeepSeek]   Tool ${i + 1}: ${t.function.name}`);
+        console.log(`[DeepSeek]     Description: ${t.function.description?.substring(0, 80)}...`);
+        console.log(`[DeepSeek]     Parameters: ${JSON.stringify(t.function.parameters).substring(0, 100)}...`);
+      });
+    }
 
     for await (const chunk of stream) {
+      chunkCount++;
       const delta = chunk.choices[0]?.delta;
+
+      // 每50个chunk打印一次状态
+      if (chunkCount % 50 === 0) {
+        console.log(`[DeepSeek] Chunk ${chunkCount}, content so far: ${fullContent.length} chars`);
+      }
+
+      // 处理文本内容
       if (delta?.content) {
         fullContent += delta.content;
         onChunk(delta.content);
       }
+
+      // 处理工具调用
+      if (delta?.tool_calls) {
+        console.log(`[DeepSeek] 🔧 Tool calls detected in chunk ${chunkCount}!`);
+        console.log(`[DeepSeek]    tool_calls count: ${delta.tool_calls.length}`);
+
+        for (const toolCallDelta of delta.tool_calls) {
+          const index = toolCallDelta.index;
+          console.log(`[DeepSeek]    Tool call delta at index ${index}:`, JSON.stringify(toolCallDelta).substring(0, 200));
+
+          // 确保有足够的空间
+          while (toolCalls.length <= index) {
+            toolCalls.push({});
+          }
+
+          if (toolCallDelta.id) {
+            toolCalls[index].id = toolCallDelta.id;
+            console.log(`[DeepSeek]      Tool ID: ${toolCallDelta.id}`);
+          }
+
+          if (toolCallDelta.type) {
+            toolCalls[index].type = toolCallDelta.type;
+            console.log(`[DeepSeek]      Tool type: ${toolCallDelta.type}`);
+          }
+
+          if (toolCallDelta.function?.name) {
+            toolCalls[index].name = toolCallDelta.function.name;
+            console.log(`[DeepSeek]      Tool name: ${toolCallDelta.function.name}`);
+          }
+
+          if (toolCallDelta.function?.arguments) {
+            if (!toolCalls[index].arguments) {
+              toolCalls[index].arguments = "";
+            }
+            toolCalls[index].arguments += toolCallDelta.function.arguments;
+            console.log(`[DeepSeek]      Tool args fragment: "${toolCallDelta.function.arguments}"`);
+          }
+        }
+      }
+
+      // 处理使用量信息
       if (chunk.usage) {
         promptTokens = chunk.usage.prompt_tokens;
         completionTokens = chunk.usage.completion_tokens;
+        console.log(`[DeepSeek] 📊 Usage: prompt=${promptTokens}, completion=${completionTokens}`);
       }
     }
 
+    console.log(`[DeepSeek] ============ Stream completed ============`);
+    console.log(`[DeepSeek] Total chunks: ${chunkCount}`);
+    console.log(`[DeepSeek] Content length: ${fullContent.length}`);
+    console.log(`[DeepSeek] Tool calls collected: ${toolCalls.length}`);
+
+    // 解析工具调用参数
+    const parsedToolCalls = toolCalls
+      .filter((tc) => tc.name && tc.arguments)
+      .map((tc) => ({
+        id: tc.id,
+        name: tc.name,
+        arguments: JSON.parse(tc.arguments),
+      }));
+
     return {
       content: fullContent,
+      toolCalls: parsedToolCalls.length > 0 ? parsedToolCalls : undefined,
       usage: {
         promptTokens,
         completionTokens,

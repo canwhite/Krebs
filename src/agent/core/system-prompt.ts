@@ -305,6 +305,20 @@ function buildToolsSection(tools: Tool[]): string {
     }
   }
 
+  // ========== 新增：工具使用指导（特别针对 DeepSeek 等模型）==========
+  const toolInstruction = `
+## 工具使用指南
+
+**重要**：当用户请求需要以下操作时，你必须使用相应的工具：
+- 搜索网络信息 → 使用 \`web_search\` 工具
+- 获取网页内容 → 使用 \`web_fetch\` 工具
+- 读取文件 → 使用 \`read_file\` 工具
+- 写入文件 → 使用 \`write_file\` 工具
+- 执行命令 → 使用 \`bash\` 工具
+
+**不要**直接生成代码或脚本让用户手动执行，而是直接调用工具完成任务！
+`;
+
   // 5. 生成工具列表（按优先级排序）
   const toolLines: string[] = [];
   const enabledTools = TOOL_ORDER.filter(tool => availableTools.has(tool));
@@ -327,6 +341,8 @@ function buildToolsSection(tools: Tool[]): string {
   }
 
   return `## Tooling
+
+${toolInstruction}
 
 Tool availability (filtered by policy):
 Tool names are case-sensitive. Call tools exactly as listed.

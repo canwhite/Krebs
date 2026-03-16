@@ -2,6 +2,7 @@ import { LitElement, html, css } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { ref, createRef } from "lit/directives/ref.js";
 import { KrebsMarkdown } from "../components/krebs-markdown.js";
+import { KrebsWebSocketClient } from "../utils/websocket.js";
 
 /**
  * 生成唯一ID（兼容性更好的版本）
@@ -303,7 +304,145 @@ export class KrebsChat extends LitElement {
   @state()
   private isCreatingSession = false;
 
+  @state()
+  private useWebSocket = true;  // 默认使用 WebSocket
+
+  private wsClient: KrebsWebSocketClient | null = null;
+  private currentToolCalls: Map<string, ToolCall> = new Map();
+  private currentAssistantMessage: Message | null = null;
+
   private messagesRef = createRef<HTMLDivElement>();
+
+  connectedCallback() {
+    super.connectedCallback();
+    if (this.useWebSocket) {
+      this.connectWebSocket();
+    }
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    if (this.wsClient) {
+      this.wsClient.disconnect();
+    }
+  }
+
+  private connectWebSocket() {
+    const wsUrl = this.getWebSocketUrl();
+    this.wsClient = new KrebsWebSocketClient(wsUrl);
+
+    this.wsClient.connect({
+      onConnected: (clientId) => {
+        console.log('[Chat] WebSocket connected:', clientId);
+      },
+
+      onChunk: (chunk: string) => {
+        this.handleStreamChunk(chunk);
+      },
+
+      onToolStart: (toolCallId, toolName, args) => {
+        this.handleToolStart(toolCallId, toolName, args);
+      },
+
+      onToolStatus: (toolCallId, status) => {
+        this.handleToolStatus(toolCallId, status);
+      },
+
+      onToolResult: (toolCallId, result) => {
+        this.handleToolResult(toolCallId, result);
+      },
+
+      onComplete: () => {
+        this.handleStreamComplete();
+      },
+
+      onError: (error) => {
+        console.error('[Chat] WebSocket error:', error);
+        this.isSending = false;
+        this.isTyping = false;
+      }
+    });
+  }
+
+  private getWebSocketUrl(): string {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.hostname;
+    const port = 3001;  // WebSocket 端口
+    return `${protocol}//${host}:${port}/ws`;
+  }
+
+  private handleStreamChunk(chunk: string) {
+    // 确保有当前正在生成的助手消息
+    if (!this.currentAssistantMessage) {
+      this.currentAssistantMessage = {
+        id: generateUniqueId(),
+        role: "assistant",
+        content: "",
+        timestamp: Date.now(),
+        toolCalls: []
+      };
+      this.messages = [...this.messages, this.currentAssistantMessage];
+    }
+
+    // 追加文本块
+    this.currentAssistantMessage.content += chunk;
+    this.requestUpdate();
+    this.scrollToBottom();
+  }
+
+  private handleToolStart(toolCallId: string, toolName: string, args: Record<string, unknown>) {
+    const toolCall: ToolCall = {
+      id: toolCallId,
+      name: toolName,
+      args,
+      status: "running"
+    };
+
+    this.currentToolCalls.set(toolCallId, toolCall);
+
+    // 确保有当前消息
+    if (!this.currentAssistantMessage) {
+      this.currentAssistantMessage = {
+        id: generateUniqueId(),
+        role: "assistant",
+        content: "",
+        timestamp: Date.now(),
+        toolCalls: []
+      };
+      this.messages = [...this.messages, this.currentAssistantMessage];
+    }
+
+    // 更新工具调用列表
+    this.currentAssistantMessage.toolCalls = [...(this.currentAssistantMessage.toolCalls || []), toolCall];
+    this.requestUpdate();
+    this.scrollToBottom();
+  }
+
+  private handleToolStatus(toolCallId: string, status: 'pending' | 'running' | 'completed' | 'failed') {
+    const toolCall = this.currentToolCalls.get(toolCallId);
+    if (toolCall) {
+      toolCall.status = status;
+      this.requestUpdate();
+    }
+  }
+
+  private handleToolResult(toolCallId: string, result: unknown) {
+    const toolCall = this.currentToolCalls.get(toolCallId);
+    if (toolCall) {
+      toolCall.result = result;
+      toolCall.status = "completed";
+      this.requestUpdate();
+    }
+  }
+
+  private handleStreamComplete() {
+    console.log('[Chat] Stream complete');
+    this.isSending = false;
+    this.isTyping = false;
+    this.currentAssistantMessage = null;
+    this.currentToolCalls.clear();
+    this.requestUpdate();
+  }
 
   render() {
     return html`
@@ -469,6 +608,29 @@ export class KrebsChat extends LitElement {
     this.isTyping = true;
     this.scrollToBottom();
 
+    // 使用 WebSocket 发送消息
+    if (this.useWebSocket && this.wsClient) {
+      this.sendViaWebSocket(messageToSend);
+    } else {
+      // 回退到 HTTP API
+      await this.sendViaHTTP(messageToSend);
+    }
+  }
+
+  private sendViaWebSocket(message: string) {
+    if (!this.wsClient) return;
+
+    const sessionId = this.currentSessionId || `session_${Date.now()}`;
+
+    this.wsClient.sendChatMessage("default", sessionId, message);
+
+    // 保存 sessionId
+    if (!this.currentSessionId) {
+      this.currentSessionId = sessionId;
+    }
+  }
+
+  private async sendViaHTTP(message: string) {
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
@@ -476,8 +638,8 @@ export class KrebsChat extends LitElement {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          message: messageToSend,
-          sessionId: this.currentSessionId,  // ✅ 首次 null，之后使用服务器返回的
+          message: message,
+          sessionId: this.currentSessionId,
           agentId: "default",
         }),
       });
@@ -486,7 +648,7 @@ export class KrebsChat extends LitElement {
 
       const data = await response.json();
 
-      // ✅ 关键修复：保存服务器返回的 sessionId
+      // 保存服务器返回的 sessionId
       if (data.sessionId) {
         this.currentSessionId = data.sessionId;
         console.log("Session ID updated:", this.currentSessionId);
@@ -501,6 +663,8 @@ export class KrebsChat extends LitElement {
       };
 
       this.messages = [...this.messages, assistantMessage];
+      this.isSending = false;
+      this.isTyping = false;
     } catch (error) {
       console.error("Failed to send message:", error);
       const errorMessage: Message = {

@@ -123,9 +123,30 @@ export class AnthropicProvider implements LLMProvider {
 
   async chatStream(
     messages: Message[],
-    options: ChatCompletionOptions,
+    options: ChatCompletionOptions & { tools?: Tool[] },
     onChunk: (chunk: string) => void
-  ): Promise<ChatCompletionResult> {
+  ): Promise<ChatCompletionResult & { toolCalls?: any[] }> {
+    console.log(`[Anthropic] ============ chatStream START ============`);
+    console.log(`[Anthropic] Model: ${options.model}`);
+    console.log(`[Anthropic] Messages count: ${messages.length}`);
+    console.log(`[Anthropic] Tools provided: ${options.tools?.length || 0}`);
+
+    // 转换工具格式为 Anthropic 格式
+    const anthropicTools = options.tools?.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      input_schema: tool.inputSchema as any,
+    }));
+
+    if (anthropicTools && anthropicTools.length > 0) {
+      console.log(`[Anthropic] Converted ${anthropicTools.length} tools to Anthropic format`);
+      anthropicTools.forEach((t, i) => {
+        console.log(`[Anthropic]   Tool ${i + 1}: ${t.name}`);
+      });
+    }
+
+    console.log(`[Anthropic] 📤 Creating stream request...`);
+
     const stream = await this.client.messages.create({
       model: options.model,
       messages: messages
@@ -138,32 +159,99 @@ export class AnthropicProvider implements LLMProvider {
       max_tokens: options.maxTokens ?? 4096,
       temperature: options.temperature,
       stream: true,
+      tools: anthropicTools && anthropicTools.length > 0 ? anthropicTools : undefined,
     });
+
+    console.log(`[Anthropic] ✅ Stream created, starting to read events...`);
 
     let fullContent = "";
     let inputTokens = 0;
     let outputTokens = 0;
+    const toolCalls: any[] = [];
+    let currentToolUse: any = null;
+    let eventCount = 0;
 
     for await (const event of stream) {
+      eventCount++;
       switch (event.type) {
+        case "content_block_start":
+          console.log(`[Anthropic] Event: content_block_start (type: ${event.content_block.type})`);
+          if (event.content_block.type === "tool_use") {
+            // 开始一个新的工具调用
+            console.log(`[Anthropic] 🔧 Tool use started: ${event.content_block.name}`);
+            currentToolUse = {
+              id: event.content_block.id,
+              name: event.content_block.name,
+              arguments: "",
+            };
+          }
+          break;
+
         case "content_block_delta":
           if (event.delta.type === "text_delta") {
             const chunk = event.delta.text;
             fullContent += chunk;
             onChunk(chunk);
+            if (fullContent.length % 100 === 0) {
+              console.log(`[Anthropic] 📦 Text content: ${fullContent.length} chars`);
+            }
+          } else if (event.delta.type === "input_json_delta" && currentToolUse) {
+            // 累积工具参数（JSON 片段）
+            currentToolUse.arguments += event.delta.partial_json;
+            console.log(`[Anthropic] 🔧 Tool args fragment: "${event.delta.partial_json}"`);
           }
           break;
+
+        case "content_block_stop":
+          if (currentToolUse) {
+            // 工具调用完成，解析参数
+            console.log(`[Anthropic] 🔧 Tool use stopped, parsing args...`);
+            try {
+              currentToolUse.arguments = JSON.parse(currentToolUse.arguments);
+              toolCalls.push({
+                id: currentToolUse.id,
+                name: currentToolUse.name,
+                arguments: currentToolUse.arguments,
+              });
+              console.log(`[Anthropic] ✅ Tool parsed: ${currentToolUse.name}`);
+            } catch (error) {
+              console.error("[Anthropic] ❌ Failed to parse tool arguments:", error);
+            }
+            currentToolUse = null;
+          }
+          break;
+
         case "message_start":
           inputTokens = event.message.usage.input_tokens;
+          console.log(`[Anthropic] 📊 Message start - input tokens: ${inputTokens}`);
           break;
+
         case "message_delta":
           outputTokens = event.usage.output_tokens;
+          console.log(`[Anthropic] 📊 Message delta - output tokens: ${outputTokens}`);
+          break;
+
+        default:
+          if (eventCount % 50 === 0) {
+            console.log(`[Anthropic] Event: ${event.type} (count: ${eventCount})`);
+          }
           break;
       }
     }
 
+    console.log(`[Anthropic] ============ Stream completed ============`);
+    console.log(`[Anthropic] Total events: ${eventCount}`);
+    console.log(`[Anthropic] Content length: ${fullContent.length}`);
+    console.log(`[Anthropic] Tool calls found: ${toolCalls.length}`);
+    if (toolCalls.length > 0) {
+      toolCalls.forEach((tc, i) => {
+        console.log(`[Anthropic]   Tool ${i + 1}: ${tc.name}`);
+      });
+    }
+
     return {
       content: fullContent,
+      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
       usage: {
         promptTokens: inputTokens,
         completionTokens: outputTokens,

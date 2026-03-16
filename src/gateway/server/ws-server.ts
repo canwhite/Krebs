@@ -15,6 +15,7 @@ import type {
   ChatSendParams,
   ChatChunkEvent,
 } from "../protocol/frames.js";
+import type { ToolCallEvent } from "@/agent/core/agent.js";
 
 const log = createLogger("Gateway:WS");
 
@@ -153,12 +154,29 @@ export class GatewayWsServer {
     params: ChatSendParams,
     ws: WebSocket
   ): Promise<void> {
+    console.log(`[WS] ============ handleStreamChat START ============`);
+    console.log(`[WS] agentId: ${params.agentId}`);
+    console.log(`[WS] sessionId: ${params.sessionId}`);
+    console.log(`[WS] message: "${params.message.substring(0, 100)}..."`);
+
+    let chunkCount = 0;
+    let totalContent = "";
+    let toolStartCount = 0;
+    let toolStatusCount = 0;
+    let toolResultCount = 0;
+
     try {
-      await this.chatService.processStream(
+      const result = await this.chatService.processStream(
         params.agentId,
         params.message,
         params.sessionId,
+        // 文本块回调
         (chunk: string) => {
+          chunkCount++;
+          totalContent += chunk;
+          if (chunkCount % 10 === 0) {
+            console.log(`[WS] 📦 Sent ${chunkCount} chunks, total length: ${totalContent.length}`);
+          }
           const event: ChatChunkEvent = {
             agentId: params.agentId,
             sessionId: params.sessionId,
@@ -170,8 +188,80 @@ export class GatewayWsServer {
               data: event,
             })
           );
+        },
+        // 工具调用事件回调（新增）
+        (toolEvent: ToolCallEvent) => {
+          // 根据事件类型发送不同的事件
+          let eventType: string;
+          const baseData = {
+            agentId: params.agentId,
+            sessionId: params.sessionId,
+            toolCallId: toolEvent.toolCallId,
+          };
+
+          switch (toolEvent.type) {
+            case "start":
+              toolStartCount++;
+              console.log(`[WS] 🔧 Sending tool.start event #${toolStartCount}: ${toolEvent.toolName}`);
+              eventType = "tool.start";
+              ws.send(
+                JSON.stringify({
+                  type: eventType,
+                  data: {
+                    ...baseData,
+                    toolName: toolEvent.toolName || "",
+                    args: toolEvent.args || {},
+                  },
+                })
+              );
+              break;
+            case "status":
+              toolStatusCount++;
+              console.log(`[WS] 📊 Sending tool.status event #${toolStatusCount}: ${toolEvent.status}`);
+              eventType = "tool.status";
+              ws.send(
+                JSON.stringify({
+                  type: eventType,
+                  data: {
+                    ...baseData,
+                    status: toolEvent.status || "pending",
+                  },
+                })
+              );
+              break;
+            case "result":
+              toolResultCount++;
+              console.log(`[WS] ✅ Sending tool.result event #${toolResultCount}`);
+              console.log(`[WS]     Result type: ${typeof toolEvent.result}`);
+              console.log(`[WS]     Result preview: ${JSON.stringify(toolEvent.result).substring(0, 150)}...`);
+              eventType = "tool.result";
+              ws.send(
+                JSON.stringify({
+                  type: eventType,
+                  data: {
+                    ...baseData,
+                    result: toolEvent.result,
+                  },
+                })
+              );
+              break;
+            default:
+              console.warn(`[WS] Unknown tool event type: ${(toolEvent as any).type}`);
+          }
         }
       );
+
+      console.log(`[WS] ============ Stream processing completed ============`);
+      console.log(`[WS] Total chunks sent: ${chunkCount}`);
+      console.log(`[WS] Total content length: ${totalContent.length}`);
+      console.log(`[WS] Tool start events: ${toolStartCount}`);
+      console.log(`[WS] Tool status events: ${toolStatusCount}`);
+      console.log(`[WS] Tool result events: ${toolResultCount}`);
+      console.log(`[WS] Final result from processStream:`);
+      console.log(`[WS]   response length: ${result.response?.length || 0}`);
+      console.log(`[WS]   response preview: "${result.response?.substring(0, 200)}..."`);
+      console.log(`[WS]   payloads count: ${result.payloads?.length || 0}`);
+      console.log(`[WS]   usage:`, result.usage);
 
       // 发送完成事件
       ws.send(
@@ -183,7 +273,9 @@ export class GatewayWsServer {
           },
         })
       );
+      console.log(`[WS] ✅ Sent chat.complete event`);
     } catch (error) {
+      console.error(`[WS] ❌ Error in handleStreamChat:`, error);
       ws.send(
         JSON.stringify({
           type: "chat.error",

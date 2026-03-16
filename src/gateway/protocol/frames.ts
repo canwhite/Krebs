@@ -97,6 +97,70 @@ export interface ChatChunkEvent {
   chunk: string;
 }
 
+// ============ 工具调用事件定义 ============
+
+/**
+ * 工具调用事件类型
+ */
+export type ToolCallEventType = "start" | "status" | "result";
+
+/**
+ * 工具调用基础事件
+ */
+export interface ToolCallEventBase {
+  agentId: string;
+  sessionId: string;
+  toolCallId: string;
+}
+
+/**
+ * 工具调用开始事件
+ * 当工具开始执行时发送
+ */
+export interface ToolCallStartEvent extends ToolCallEventBase {
+  type: "start";
+  toolName: string;
+  args: Record<string, unknown>;
+}
+
+/**
+ * 工具调用状态事件
+ * 当工具状态变化时发送
+ */
+export interface ToolCallStatusEvent extends ToolCallEventBase {
+  type: "status";
+  status: "pending" | "running" | "completed" | "failed";
+}
+
+/**
+ * 工具调用结果事件
+ * 当工具执行完成时发送
+ */
+export interface ToolCallResultEvent extends ToolCallEventBase {
+  type: "result";
+  result: unknown;
+}
+
+/**
+ * 工具调用事件联合类型
+ */
+export type ToolCallEvent =
+  | ToolCallStartEvent
+  | ToolCallStatusEvent
+  | ToolCallResultEvent;
+
+// ============ 思考过程事件定义 ============
+
+/**
+ * 思考过程块事件
+ * 当模型返回思考内容时发送（如果支持）
+ */
+export interface ThinkingChunkEvent {
+  agentId: string;
+  sessionId: string;
+  content: string;
+}
+
 export interface AgentEvent {
   type: "created" | "updated" | "deleted";
   agentId: string;

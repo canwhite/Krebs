@@ -245,6 +245,7 @@ export class GatewayHttpServer {
         res.json({
           content: result.response,
           payloads: result.payloads,
+          toolCalls: result.toolCalls,
           usage: result.usage,
           sessionId: effectiveSessionId,  // ✅ 返回 sessionId 给前端，让前端可以复用
         });

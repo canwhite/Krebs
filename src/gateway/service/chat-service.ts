@@ -13,6 +13,7 @@
  */
 
 import type { AgentResult } from "@/types/index.js";
+import type { ToolCallEvent } from "@/agent/core/agent.js";
 
 /**
  * 聊天服务接口
@@ -40,14 +41,16 @@ export interface IChatService {
    * @param agentId - Agent ID
    * @param message - 用户消息
    * @param sessionId - 会话 ID
-   * @param onChunk - 流式回调
+   * @param onChunk - 流式文本回调
+   * @param onToolCall - 工具调用事件回调（可选）
    * @returns 处理结果
    */
   processStream(
     agentId: string,
     message: string,
     sessionId: string,
-    onChunk: (chunk: string) => void
+    onChunk: (chunk: string) => void,
+    onToolCall?: (event: ToolCallEvent) => void
   ): Promise<AgentResult>;
 
   /**
@@ -105,7 +108,8 @@ export class AgentChatService implements IChatService {
     agentId: string,
     message: string,
     sessionId: string,
-    onChunk: (chunk: string) => void
+    onChunk: (chunk: string) => void,
+    onToolCall?: (event: ToolCallEvent) => void
   ): Promise<AgentResult> {
     // 获取 Orchestrator（推荐使用）
     const orchestrator = this.agentManager.getOrchestrator(agentId);
@@ -114,7 +118,7 @@ export class AgentChatService implements IChatService {
       throw new Error(`Agent not found: ${agentId}`);
     }
 
-    return orchestrator.processStream(message, sessionId, onChunk);
+    return orchestrator.processStream(message, sessionId, onChunk, onToolCall);
   }
 
   /**
