@@ -411,6 +411,11 @@ export class KrebsChat extends LitElement {
   }
 
   private handleStreamChunk(chunk: string) {
+    // 收到第一个 chunk 时关闭 typing indicator
+    if (this.isTyping) {
+      this.isTyping = false;
+    }
+
     // 确保有当前正在生成的助手消息
     if (!this.currentAssistantMessage) {
       this.currentAssistantMessage = {
@@ -430,6 +435,11 @@ export class KrebsChat extends LitElement {
   }
 
   private handleToolStart(toolCallId: string, toolName: string, args: Record<string, unknown>) {
+    // 收到工具调用时关闭 typing indicator
+    if (this.isTyping) {
+      this.isTyping = false;
+    }
+
     const toolCall: ToolCall = {
       id: toolCallId,
       name: toolName,
