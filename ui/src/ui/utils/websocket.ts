@@ -42,6 +42,8 @@ export class KrebsWebSocketClient {
   private reconnectDelay = 1000;
   private handlers: WebSocketEventHandlers = {};
   private isManualClose = false;
+  private _connectionState: 'connecting' | 'connected' | 'disconnected' = 'disconnected';
+  private connectionResolvers: Array<(connected: boolean) => void> = [];
 
   constructor(url: string) {
     this.url = url;
@@ -53,6 +55,7 @@ export class KrebsWebSocketClient {
   connect(handlers: WebSocketEventHandlers): void {
     this.handlers = handlers;
     this.isManualClose = false;
+    this._connectionState = 'connecting';
 
     try {
       this.ws = new WebSocket(this.url);
@@ -60,6 +63,9 @@ export class KrebsWebSocketClient {
       this.ws.onopen = () => {
         console.log('[WebSocket] Connected to', this.url);
         this.reconnectAttempts = 0;
+        this._connectionState = 'connected';
+        this.connectionResolvers.forEach(resolve => resolve(true));
+        this.connectionResolvers = [];
       };
 
       this.ws.onmessage = (event) => {
@@ -77,6 +83,9 @@ export class KrebsWebSocketClient {
 
       this.ws.onclose = () => {
         console.log('[WebSocket] Connection closed');
+        this._connectionState = 'disconnected';
+        this.connectionResolvers.forEach(resolve => resolve(false));
+        this.connectionResolvers = [];
         if (!this.isManualClose && this.reconnectAttempts < this.maxReconnectAttempts) {
           this.reconnect();
         }
@@ -92,6 +101,7 @@ export class KrebsWebSocketClient {
    */
   disconnect(): void {
     this.isManualClose = true;
+    this._connectionState = 'disconnected';
     if (this.ws) {
       this.ws.close();
       this.ws = null;
@@ -125,6 +135,33 @@ export class KrebsWebSocketClient {
    */
   isConnected(): boolean {
     return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
+  }
+
+  /**
+   * Get connection state
+   */
+  getConnectionState(): 'connecting' | 'connected' | 'disconnected' {
+    return this._connectionState;
+  }
+
+  /**
+   * Wait for connection with timeout
+   */
+  waitForConnection(timeout = 5000): Promise<boolean> {
+    if (this.isConnected()) {
+      return Promise.resolve(true);
+    }
+
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        resolve(false);
+      }, timeout);
+
+      this.connectionResolvers.push((connected) => {
+        clearTimeout(timer);
+        resolve(connected);
+      });
+    });
   }
 
   /**

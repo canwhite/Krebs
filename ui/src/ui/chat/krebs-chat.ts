@@ -131,6 +131,40 @@ export class KrebsChat extends LitElement {
       z-index: 100;
     }
 
+    .connection-status {
+      position: fixed;
+      top: 8px;
+      right: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: var(--radius-sm);
+      font-size: var(--font-size-xs);
+      z-index: 200;
+      background-color: var(--color-surface);
+      border: 1px solid var(--color-border);
+    }
+
+    .connection-status.connected {
+      color: #22c55e;
+    }
+
+    .connection-status.disconnected {
+      color: #ef4444;
+    }
+
+    .connection-status.connecting {
+      color: #f59e0b;
+    }
+
+    .connection-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: currentColor;
+    }
+
     .input-wrapper {
       max-width: 800px;
       margin: 0 auto;
@@ -305,7 +339,10 @@ export class KrebsChat extends LitElement {
   private isCreatingSession = false;
 
   @state()
-  private useWebSocket = true;  // 默认使用 WebSocket
+  private wsConnected = false;
+
+  @state()
+  private connectionError: string | null = null;
 
   private wsClient: KrebsWebSocketClient | null = null;
   private currentToolCalls: Map<string, ToolCall> = new Map();
@@ -315,15 +352,14 @@ export class KrebsChat extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    if (this.useWebSocket) {
-      this.connectWebSocket();
-    }
+    this.connectWebSocket();
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     if (this.wsClient) {
       this.wsClient.disconnect();
+      this.wsConnected = false;
     }
   }
 
@@ -334,6 +370,7 @@ export class KrebsChat extends LitElement {
     this.wsClient.connect({
       onConnected: (clientId) => {
         console.log('[Chat] WebSocket connected:', clientId);
+        this.wsConnected = true;
       },
 
       onChunk: (chunk: string) => {
@@ -360,6 +397,8 @@ export class KrebsChat extends LitElement {
         console.error('[Chat] WebSocket error:', error);
         this.isSending = false;
         this.isTyping = false;
+        this.wsConnected = false;
+        this.connectionError = error;
       }
     });
   }
@@ -446,6 +485,11 @@ export class KrebsChat extends LitElement {
 
   render() {
     return html`
+      <div class="connection-status ${this.wsConnected ? 'connected' : 'disconnected'}">
+        <span class="connection-dot"></span>
+        ${this.wsConnected ? '已连接' : '未连接'}
+      </div>
+
       <div class="messages-container" ${ref(this.messagesRef)}>
         ${this.messages.map(
           (msg) => html`
@@ -509,7 +553,8 @@ export class KrebsChat extends LitElement {
           <button
             class="send-button"
             @click=${this.sendMessage}
-            ?disabled=${this.isSending || !this.input.trim()}
+            ?disabled=${this.isSending || !this.input.trim() || !this.wsConnected}
+            title=${this.wsConnected ? "发送消息" : "等待连接..."}
           >
             ${this.isSending ? "发送中..." : "发送"}
           </button>
@@ -594,6 +639,15 @@ export class KrebsChat extends LitElement {
   private async sendMessage() {
     if (!this.input.trim() || this.isSending) return;
 
+    // 检查 WebSocket 连接状态
+    if (!this.wsConnected && this.wsClient) {
+      const connected = await this.wsClient.waitForConnection(3000);
+      if (!connected) {
+        console.error('[Chat] WebSocket not connected');
+        return;
+      }
+    }
+
     const userMessage: Message = {
       id: generateUniqueId(),
       role: "user",
@@ -608,76 +662,29 @@ export class KrebsChat extends LitElement {
     this.isTyping = true;
     this.scrollToBottom();
 
-    // 使用 WebSocket 发送消息
-    if (this.useWebSocket && this.wsClient) {
-      this.sendViaWebSocket(messageToSend);
-    } else {
-      // 回退到 HTTP API
-      await this.sendViaHTTP(messageToSend);
-    }
+    this.sendViaWebSocket(messageToSend);
   }
 
   private sendViaWebSocket(message: string) {
-    if (!this.wsClient) return;
+    if (!this.wsClient || !this.wsConnected) {
+      console.error('[Chat] WebSocket not connected');
+      this.isSending = false;
+      this.isTyping = false;
+      return;
+    }
 
     const sessionId = this.currentSessionId || `session_${Date.now()}`;
 
-    this.wsClient.sendChatMessage("default", sessionId, message);
-
-    // 保存 sessionId
-    if (!this.currentSessionId) {
-      this.currentSessionId = sessionId;
-    }
-  }
-
-  private async sendViaHTTP(message: string) {
     try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          message: message,
-          sessionId: this.currentSessionId,
-          agentId: "default",
-        }),
-      });
+      this.wsClient.sendChatMessage("default", sessionId, message);
 
-      if (!response.ok) throw new Error("Failed to send message");
-
-      const data = await response.json();
-
-      // 保存服务器返回的 sessionId
-      if (data.sessionId) {
-        this.currentSessionId = data.sessionId;
-        console.log("Session ID updated:", this.currentSessionId);
+      if (!this.currentSessionId) {
+        this.currentSessionId = sessionId;
       }
-
-      const assistantMessage: Message = {
-        id: generateUniqueId(),
-        role: "assistant",
-        content: data.content || "",
-        timestamp: Date.now(),
-        toolCalls: data.toolCalls,
-      };
-
-      this.messages = [...this.messages, assistantMessage];
-      this.isSending = false;
-      this.isTyping = false;
     } catch (error) {
-      console.error("Failed to send message:", error);
-      const errorMessage: Message = {
-        id: generateUniqueId(),
-        role: "assistant",
-        content: "抱歉，发送消息时出错。请稍后重试。",
-        timestamp: Date.now(),
-      };
-      this.messages = [...this.messages, errorMessage];
-    } finally {
+      console.error('[Chat] Failed to send message:', error);
       this.isSending = false;
       this.isTyping = false;
-      this.scrollToBottom();
     }
   }
 
