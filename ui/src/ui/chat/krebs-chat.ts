@@ -339,6 +339,69 @@ export class KrebsChat extends LitElement {
         font-size: var(--font-size-md);
       }
     }
+
+    .empty-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: var(--spacing-xl);
+      text-align: center;
+      animation: fade-in 0.5s ease;
+    }
+
+    @keyframes fade-in {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .empty-icon {
+      font-size: 64px;
+      margin-bottom: var(--spacing-lg);
+      opacity: 0.8;
+    }
+
+    .empty-title {
+      font-size: var(--font-size-xl);
+      font-weight: 600;
+      color: var(--color-text);
+      margin-bottom: var(--spacing-sm);
+    }
+
+    .empty-subtitle {
+      font-size: var(--font-size-md);
+      color: var(--color-text-secondary);
+      margin-bottom: var(--spacing-xl);
+      max-width: 400px;
+      line-height: 1.6;
+    }
+
+    .empty-suggestions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--spacing-sm);
+      justify-content: center;
+      max-width: 500px;
+    }
+
+    .suggestion-chip {
+      padding: var(--spacing-sm) var(--spacing-md);
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-lg);
+      font-size: var(--font-size-sm);
+      color: var(--color-text-secondary);
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .suggestion-chip:hover {
+      border-color: var(--color-primary);
+      color: var(--color-primary);
+      background: var(--color-primary-bg, rgba(0, 102, 204, 0.05));
+      transform: translateY(-2px);
+    }
   `;
 
   @state()
@@ -522,46 +585,50 @@ export class KrebsChat extends LitElement {
       </div>
 
       <div class="messages-container" ${ref(this.messagesRef)}>
-        ${this.messages.map(
-          (msg) => html`
-            <div class="message ${msg.role}">
-              <div class="message-avatar">
-                ${msg.role === "user" ? "U" : "AI"}
-              </div>
-              ${msg.role === "user" ? html`
-                <div class="message-content">
-                  ${msg.content}
-                </div>
-              ` : html`
-                <div class="message-body">
-                  <div class="message-content">
-                    <krebs-markdown
-                      .content=${msg.content}
-                      .isUser=${false}
-                    ></krebs-markdown>
+        ${this.messages.length === 0 && !this.isTyping
+          ? this.renderEmptyState()
+          : html`
+              ${this.messages.map(
+                (msg) => html`
+                  <div class="message ${msg.role}">
+                    <div class="message-avatar">
+                      ${msg.role === "user" ? "U" : "AI"}
+                    </div>
+                    ${msg.role === "user" ? html`
+                      <div class="message-content">
+                        ${msg.content}
+                      </div>
+                    ` : html`
+                      <div class="message-body">
+                        <div class="message-content">
+                          <krebs-markdown
+                            .content=${msg.content}
+                            .isUser=${false}
+                          ></krebs-markdown>
+                        </div>
+                        ${msg.toolCalls && msg.toolCalls.length > 0 
+                          ? html`<div class="tool-sidebar">${this.renderToolSidebar(msg.toolCalls)}</div>` 
+                          : ''}
+                      </div>
+                    `}
                   </div>
-                  ${msg.toolCalls && msg.toolCalls.length > 0 
-                    ? html`<div class="tool-sidebar">${this.renderToolSidebar(msg.toolCalls)}</div>` 
-                    : ''}
-                </div>
-              `}
-            </div>
-          `,
-        )}
-        ${this.isTyping
-          ? html`
-              <div class="message assistant">
-                <div class="message-avatar">AI</div>
-                <div class="message-content">
-                  <div class="typing-indicator">
-                    <span></span>
-                    <span></span>
-                    <span></span>
-                  </div>
-                </div>
-              </div>
-            `
-          : ""}
+                `,
+              )}
+              ${this.isTyping
+                ? html`
+                    <div class="message assistant">
+                      <div class="message-avatar">AI</div>
+                      <div class="message-content">
+                        <div class="typing-indicator">
+                          <span></span>
+                          <span></span>
+                          <span></span>
+                        </div>
+                      </div>
+                    </div>
+                  `
+                : ""}
+            `}
       </div>
 
       <div class="input-container">
@@ -598,6 +665,42 @@ export class KrebsChat extends LitElement {
         </div>
       </div>
     `;
+  }
+
+  private renderEmptyState() {
+    const suggestions = [
+      "帮我写一个 TypeScript 函数",
+      "解释什么是 RAG 技术",
+      "推荐一些提高代码质量的方法",
+      "帮我分析这段代码的问题",
+    ];
+
+    return html`
+      <div class="empty-state">
+        <div class="empty-icon">🤖</div>
+        <h2 class="empty-title">你好，我是 Krebs AI 助手</h2>
+        <p class="empty-subtitle">
+          我可以帮你编写代码、解答问题、搜索信息。请在下方输入你的问题开始对话。
+        </p>
+        <div class="empty-suggestions">
+          ${suggestions.map(
+            (suggestion) => html`
+              <div 
+                class="suggestion-chip" 
+                @click=${() => this.handleSuggestionClick(suggestion)}
+              >
+                ${suggestion}
+              </div>
+            `
+          )}
+        </div>
+      </div>
+    `;
+  }
+
+  private handleSuggestionClick(suggestion: string) {
+    this.input = suggestion;
+    this.sendMessage();
   }
 
   private renderToolSidebar(toolCalls: ToolCall[]) {
