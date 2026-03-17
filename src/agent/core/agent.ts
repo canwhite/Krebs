@@ -650,6 +650,14 @@ export class Agent {
 
       let fullResponse = "";
       let chunkCount = 0;
+      const iterationTag = `[Iteration ${iteration}]`;
+
+      console.log(`[Agent] ${iterationTag} 📤 Calling chatStream with ${allMessages.length} messages`);
+      console.log(`[Agent] ${iterationTag} Last 3 messages:`);
+      allMessages.slice(-3).forEach((m, i) => {
+        const preview = m.content?.substring(0, 100) || "";
+        console.log(`[Agent] ${iterationTag}   [${allMessages.length - 3 + i}] ${m.role}: "${preview}..."`);
+      });
 
       const response = await this.deps.provider.chatStream(
         allMessages,
@@ -664,11 +672,18 @@ export class Agent {
           fullResponse += chunk;
           chunkCount++;
           if (chunkCount % 10 === 0) {
-            console.log(`[Agent] 📦 Received ${chunkCount} chunks, current length: ${fullResponse.length}`);
+            console.log(`[Agent] ${iterationTag} 📦 Received ${chunkCount} chunks, current length: ${fullResponse.length}`);
           }
+          // 立即推送到前端
           onChunk(chunk);
         }
       );
+
+      console.log(`[Agent] ${iterationTag} 📥 LLM stream completed`);
+      console.log(`[Agent] ${iterationTag} Total chunks: ${chunkCount}`);
+      console.log(`[Agent] ${iterationTag} Full response length: ${fullResponse.length}`);
+      console.log(`[Agent] ${iterationTag} Full response preview: "${fullResponse.substring(0, 300)}..."`);
+      console.log(`[Agent] ${iterationTag} Tool calls in response: ${response.toolCalls?.length || 0}`);
 
       console.log(`[Agent] 📥 LLM response received`);
       console.log(`[Agent] Total chunks: ${chunkCount}`);
@@ -714,6 +729,7 @@ export class Agent {
 
       // 检查是否有 tool_calls
       if (allToolCalls.length > 0) {
+        // 有工具调用，执行工具
         // 有工具调用，执行工具
         console.log(`[Agent] 🔧 Tool calls detected: ${allToolCalls.length}`);
         allToolCalls.forEach((tc, i) => {
@@ -767,10 +783,54 @@ export class Agent {
         continue;
       }
 
+      // ========== 新增：检测"未完成"的响应 ==========
+      // 检查 LLM 是否表达了要继续的意图但没有实际调用工具
+      const incompletePatterns = [
+        /让我尝试/i,
+        /让我访问/i,
+        /让我查看/i,
+        /让我检查/i,
+        /我将尝试/i,
+        /我将访问/i,
+        /接下来/i,
+        /现在让我/i,
+      ];
+
+      const isIncompleteResponse = incompletePatterns.some(pattern => pattern.test(fullResponse));
+
+      if (isIncompleteResponse && iteration < maxIterations) {
+        console.log(`[Agent] ⚠️ [Iteration ${iteration}] INCOMPLETE RESPONSE DETECTED`);
+        console.log(`[Agent] [Iteration ${iteration}] Response: "${fullResponse.substring(0, 100)}..."`);
+        console.log(`[Agent] [Iteration ${iteration}] LLM expressed intent but no tool calls were generated`);
+        console.log(`[Agent] [Iteration ${iteration}] Forcing continuation to next iteration`);
+
+        // 保存这个"未完成"的响应到消息历史
+        const incompleteMessage: Message = {
+          role: "assistant",
+          content: fullResponse,
+          timestamp: Date.now(),
+        };
+        allMessages.push(incompleteMessage);
+        messagesToSave.push(incompleteMessage);
+
+        // 添加一个系统提示，强制 LLM 调用工具
+        const forceToolCallMessage: Message = {
+          role: "system",
+          content: `You just expressed an intent to take action ("${fullResponse.substring(0, 50)}...") but you didn't call any tool. You MUST call the appropriate tool NOW to complete your action. Do not just describe what you will do - actually call the tool in your response.`,
+          timestamp: Date.now(),
+        };
+        allMessages.push(forceToolCallMessage);
+
+        console.log(`[Agent] [Iteration ${iteration}] 🔄 Forcing continuation to next iteration`);
+        continue;
+      }
+
       // 没有 tool_calls，这是最终回复
-      console.log(`[Agent] ✅ No tool calls, this is the final response`);
-      console.log(`[Agent] Final response length: ${fullResponse.length}`);
-      console.log(`[Agent] Final response preview: "${fullResponse.substring(0, 300)}..."`);
+      console.log(`[Agent] ✅ [Iteration ${iteration}] No tool calls, this is the final response`);
+      console.log(`[Agent] [Iteration ${iteration}] Final response length: ${fullResponse.length}`);
+      console.log(`[Agent] [Iteration ${iteration}] Final response preview: "${fullResponse.substring(0, 300)}..."`);
+      console.log(`[Agent] [Iteration ${iteration}] Total tool results collected: ${allToolResults.length}`);
+      console.log(`[Agent] [Iteration ${iteration}] Total iterations: ${iteration}`);
 
       const finalMessage = {
         role: "assistant" as const,
@@ -779,6 +839,8 @@ export class Agent {
       };
       allMessages.push(finalMessage);
       messagesToSave.push(finalMessage);
+
+      console.log(`[Agent] [Iteration ${iteration}] 💾 Saving ${messagesToSave.length} messages to session`);
 
       // 保存对话历史
       console.log(`[Agent] 💾 Saving ${messagesToSave.length} messages to session`);

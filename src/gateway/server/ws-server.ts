@@ -257,11 +257,13 @@ export class GatewayWsServer {
       console.log(`[WS] Tool start events: ${toolStartCount}`);
       console.log(`[WS] Tool status events: ${toolStatusCount}`);
       console.log(`[WS] Tool result events: ${toolResultCount}`);
-      console.log(`[WS] Final result from processStream:`);
-      console.log(`[WS]   response length: ${result.response?.length || 0}`);
-      console.log(`[WS]   response preview: "${result.response?.substring(0, 200)}..."`);
-      console.log(`[WS]   payloads count: ${result.payloads?.length || 0}`);
-      console.log(`[WS]   usage:`, result.usage);
+      console.log(`[WS] ============ Final result analysis ============`);
+      console.log(`[WS] result.response type: ${typeof result.response}`);
+      console.log(`[WS] result.response length: ${result.response?.length || 0}`);
+      console.log(`[WS] result.response preview: "${result.response?.substring(0, 200)}..."`);
+      console.log(`[WS] result.payloads count: ${result.payloads?.length || 0}`);
+      console.log(`[WS] result.usage:`, result.usage);
+      console.log(`[WS] ========== End of analysis ==========`);
 
       // 发送完成事件
       ws.send(

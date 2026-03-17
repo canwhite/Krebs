@@ -199,6 +199,11 @@ export function buildAgentSystemPrompt(
       parts.push(buildToolCallStyleSection());
     }
 
+    // Tool Failure Handling（新增）
+    if (!isMinimal) {
+      parts.push(buildToolFailureSection());
+    }
+
     // Memory Recall（新增，如果有记忆工具）
     if (config.tools && config.tools.length > 0) {
       const availableTools = new Set(config.tools.map(t => t.name.toLowerCase()));
@@ -372,6 +377,39 @@ Narrate only when it helps:
 
 Keep narration brief and value-dense; avoid repeating obvious steps.
 Use plain human language for narration unless in a technical context.`;
+}
+
+/**
+ * 构建工具失败处理部分（新增）
+ * 帮助 LLM 在工具失败时给出更好的响应
+ */
+function buildToolFailureSection(): string {
+  return `## Tool Failure Handling
+
+When a tool call fails (returns \`success: false\`):
+
+**For search/web tools failure** (most common):
+1. IMMEDIATELY stop trying alternatives
+2. Tell the user: "I cannot search the web right now because [reason]"
+3. Answer using your general knowledge
+4. Clearly state: "Based on my knowledge up to [date]..."
+5. Do NOT try to fetch URLs, use bash to find files, or explore workarounds
+
+**For other permanent failures** (missing API key, unavailable service):
+1. Stop trying alternative workarounds immediately
+2. Explain the issue clearly to the user
+3. Provide actionable next steps (e.g., "Configure the API key in settings")
+4. Attempt to answer the user's question using your general knowledge
+
+**CRITICAL - Call tools directly**:
+When you want to use a tool, CALL IT immediately in the same response.
+- ❌ Wrong: "Let me try fetching that URL..." (then stop without calling)
+- ✅ Right: Call the web_fetch tool in the same response
+- ❌ Wrong: "I will search for..." (then stop without calling)
+- ✅ Right: Call the web_search tool in the same response
+
+**Remember**: The user wants their question ANSWERED, not a journey through your problem-solving process.
+If search tools fail, use your knowledge to answer directly.`;
 }
 
 /**
