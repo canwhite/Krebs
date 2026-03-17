@@ -547,6 +547,7 @@ export class KrebsChat extends LitElement {
 
     // 更新工具调用列表
     this.currentAssistantMessage.toolCalls = [...(this.currentAssistantMessage.toolCalls || []), toolCall];
+    console.log('[Chat] Tool start:', toolName, 'status:', toolCall.status);
     this.requestUpdate();
     this.scrollToBottom();
   }
@@ -555,6 +556,14 @@ export class KrebsChat extends LitElement {
     const toolCall = this.currentToolCalls.get(toolCallId);
     if (toolCall) {
       toolCall.status = status;
+      // 同步更新消息数组中的工具调用
+      if (this.currentAssistantMessage?.toolCalls) {
+        const index = this.currentAssistantMessage.toolCalls.findIndex(tc => tc.id === toolCallId);
+        if (index !== -1) {
+          this.currentAssistantMessage.toolCalls[index] = { ...toolCall };
+          this.currentAssistantMessage.toolCalls = [...this.currentAssistantMessage.toolCalls];
+        }
+      }
       this.requestUpdate();
     }
   }
@@ -564,6 +573,14 @@ export class KrebsChat extends LitElement {
     if (toolCall) {
       toolCall.result = result;
       toolCall.status = "completed";
+      // 同步更新消息数组中的工具调用
+      if (this.currentAssistantMessage?.toolCalls) {
+        const index = this.currentAssistantMessage.toolCalls.findIndex(tc => tc.id === toolCallId);
+        if (index !== -1) {
+          this.currentAssistantMessage.toolCalls[index] = { ...toolCall };
+          this.currentAssistantMessage.toolCalls = [...this.currentAssistantMessage.toolCalls];
+        }
+      }
       this.requestUpdate();
     }
   }

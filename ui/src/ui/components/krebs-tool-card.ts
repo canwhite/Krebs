@@ -33,6 +33,25 @@ export class KrebsToolCard extends LitElement {
       border-radius: var(--radius-md);
       padding: var(--spacing-md);
       margin-top: var(--spacing-sm);
+      transition: all 0.3s ease;
+    }
+
+    /* 工具运行中的呼吸效果 */
+    .tool-card.running {
+      border-color: var(--color-info);
+      box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.3);
+      animation: breathe 2s ease-in-out infinite;
+    }
+
+    @keyframes breathe {
+      0%, 100% {
+        border-color: var(--color-border);
+        box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+      }
+      50% {
+        border-color: var(--color-info);
+        box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.4);
+      }
     }
 
     .tool-header {
@@ -208,7 +227,7 @@ export class KrebsToolCard extends LitElement {
     const isConfigured = this.isApiKeyConfigured();
 
     return html`
-      <div class="tool-card">
+      <div class="tool-card ${this.status}">
         <div class="tool-header">
           <span class="tool-name">🛠️ ${this.name}</span>
           <div style="display: flex; gap: var(--spacing-xs); align-items: center;">

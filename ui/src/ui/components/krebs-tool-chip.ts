@@ -52,6 +52,19 @@ export class KrebsToolChip extends LitElement {
     .chip.running {
       border-color: var(--color-info);
       background: linear-gradient(135deg, var(--color-surface) 0%, rgba(59, 130, 246, 0.1) 100%);
+      animation: breathe-chip 1.5s ease-in-out infinite;
+      box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4);
+    }
+
+    @keyframes breathe-chip {
+      0%, 100% {
+        box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4);
+        transform: scale(1);
+      }
+      50% {
+        box-shadow: 0 0 0 6px rgba(59, 130, 246, 0);
+        transform: scale(1.05);
+      }
     }
 
     .chip.completed {
@@ -277,6 +290,7 @@ export class KrebsToolChip extends LitElement {
   }
 
   render() {
+    console.log('[ToolChip] Rendering:', this.name, 'status:', this.status);
     return html`
       <div class="chip ${this.status}" @click=${() => this.expanded = true}>
         <span class="chip-index">#${this.index + 1}</span>
