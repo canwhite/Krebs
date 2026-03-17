@@ -39,6 +39,58 @@ import { compactMessages } from "@/utils/compaction.js";
 import { getModelContextWindow } from "@/utils/model-context.js";
 import { summarizeMessages } from "@/utils/summarization.js";
 import { parseToolCallsFromText, generateToolCallId, type ParsedToolCall } from "../tool-parser.js";
+import { apiKeyManager } from "@/shared/api-keys.js";
+
+/**
+ * 检查工具是否可用（是否已配置必要的 API key）
+ *
+ * @param tool - 要检查的工具
+ * @returns 工具是否可用
+ */
+function isToolAvailable(tool: Tool): boolean {
+  // 如果工具不需要 API key，直接可用
+  if (!tool.requiresApiKey) {
+    return true;
+  }
+
+  // 如果工具需要 API key，检查是否已配置
+  const apiKeyName = tool.apiKeyName || tool.name;
+  const hasKey = apiKeyManager.hasApiKey(apiKeyName);
+
+  if (!hasKey) {
+    console.log(`[Agent] Tool "${tool.name}" is unavailable: missing API key "${apiKeyName}"`);
+  }
+
+  return hasKey;
+}
+
+/**
+ * 过滤可用的工具
+ *
+ * @param tools - 工具列表
+ * @returns 过滤后的可用工具列表
+ */
+function filterAvailableTools(tools?: Tool[]): Tool[] {
+  console.log(`[Agent] ===== filterAvailableTools CALLED =====`);
+  if (!tools) {
+    console.log(`[Agent] filterAvailableTools: no tools, returning []`);
+    return [];
+  }
+
+  console.log(`[Agent] filterAvailableTools: processing ${tools.length} tools`);
+  const availableTools = tools.filter(isToolAvailable);
+  const filteredTools = tools.filter(t => !isToolAvailable(t));
+
+  if (filteredTools.length > 0) {
+    console.log(`[Agent] 🚫 Filtered ${filteredTools.length} unavailable tools:`,
+      filteredTools.map(t => `"${t.name}"`).join(", "));
+  }
+
+  console.log(`[Agent] ✅ Available tools: ${availableTools.length}/${tools.length}`,
+    `(${availableTools.map(t => t.name).join(", ")})`);
+
+  return availableTools;
+}
 
 /**
  * 工具调用事件接口
@@ -535,12 +587,15 @@ export class Agent {
     // ========== 关键修复：检测是否需要工具调用 ==========
     // 如果有工具可用，使用支持工具调用的模式（非流式，但更完整）
     // 如果没有工具，使用流式模式
-    const hasToolsAvailable = this.deps.tools && this.deps.tools.length > 0;
+    // ========== 新增：过滤可用工具 ==========
+    const availableTools = filterAvailableTools(this.deps.tools);
+    const hasToolsAvailable = availableTools.length > 0;
 
     console.log(`[Agent] Tools available: ${hasToolsAvailable}`);
-    console.log(`[Agent] Tools count: ${this.deps.tools?.length || 0}`);
-    if (this.deps.tools) {
-      console.log(`[Agent] Available tools: ${this.deps.tools.map(t => t.name).join(', ')}`);
+    console.log(`[Agent] Total registered tools: ${this.deps.tools?.length || 0}`);
+    console.log(`[Agent] Available tools (after filtering): ${availableTools.length}`);
+    if (availableTools.length > 0) {
+      console.log(`[Agent] Available tools: ${availableTools.map(t => t.name).join(', ')}`);
     }
 
     if (hasToolsAvailable) {
@@ -610,6 +665,10 @@ export class Agent {
     console.log(`[Agent] onChunk provided: ${typeof onChunk}`);
     console.log(`[Agent] onToolCall provided: ${typeof onToolCall}`);
 
+    // ========== 新增：过滤可用工具 ==========
+    const availableTools = filterAvailableTools(this.deps.tools);
+    console.log(`[Agent] 🛠️ Using ${availableTools.length} available tools for LLM`);
+
     // 添加用户消息到列表
     const allMessages: Message[] = [...messagesForLLM];
 
@@ -645,8 +704,10 @@ export class Agent {
       // 调用 LLM（使用流式 API，但我们只收集完整响应）
       console.log(`[Agent] 📤 Calling LLM with chatStream...`);
       console.log(`[Agent] Model: ${this.config.model ?? "claude-3-5-sonnet-20241022"}`);
-      console.log(`[Agent] Tools provided: ${!!this.deps.tools}`);
-      console.log(`[Agent] Tools count: ${this.deps.tools?.length || 0}`);
+      console.log(`[Agent] Available tools: ${availableTools.length}`);
+      availableTools.forEach((t, i) => {
+        console.log(`[Agent]   [${i}] ${t.name}`);
+      });
 
       let fullResponse = "";
       let chunkCount = 0;
@@ -665,7 +726,7 @@ export class Agent {
           model: this.config.model ?? "claude-3-5-sonnet-20241022",
           temperature: this.config.temperature,
           maxTokens: this.config.maxTokens,
-          tools: this.deps.tools,
+          tools: availableTools,  // ← 使用过滤后的可用工具
         },
         (chunk: string) => {
           // 流式推送文本块
@@ -746,10 +807,11 @@ export class Agent {
         allMessages.push(assistantToolMessage);
         messagesToSave.push(assistantToolMessage);
 
-        // 执行工具调用
+        // 执行工具调用（只使用可用工具）
         console.log(`[Agent] ⚙️ Executing ${allToolCalls.length} tools...`);
         const toolResults = await this.executeToolCallsWithEvents(
           allToolCalls,
+          availableTools,
           onToolCall
         );
         console.log(`[Agent] ✅ Tools execution completed`);
@@ -785,18 +847,28 @@ export class Agent {
 
       // ========== 新增：检测"未完成"的响应 ==========
       // 检查 LLM 是否表达了要继续的意图但没有实际调用工具
+      console.log(`[Agent] 🔍 Checking for incomplete response patterns...`);
+      console.log(`[Agent] 🔍 Response preview: "${fullResponse.substring(0, 100)}..."`);
+
       const incompletePatterns = [
         /让我尝试/i,
         /让我访问/i,
         /让我查看/i,
         /让我检查/i,
+        /让我继续/i,
+        /让我获取/i,
         /我将尝试/i,
         /我将访问/i,
+        /我将继续/i,
         /接下来/i,
         /现在让我/i,
+        /让我帮你/i,
+        /我将继续/i,
       ];
 
       const isIncompleteResponse = incompletePatterns.some(pattern => pattern.test(fullResponse));
+
+      console.log(`[Agent] 🔍 isIncompleteResponse: ${isIncompleteResponse}, iteration: ${iteration}, maxIterations: ${maxIterations}`);
 
       if (isIncompleteResponse && iteration < maxIterations) {
         console.log(`[Agent] ⚠️ [Iteration ${iteration}] INCOMPLETE RESPONSE DETECTED`);
@@ -881,28 +953,34 @@ export class Agent {
 
   /**
    * 执行工具调用（带事件推送）
+   * @param toolCalls - LLM 返回的工具调用列表
+   * @param availableTools - 可用工具列表（已过滤）
+   * @param onToolCall - 工具调用事件回调
    */
   private async executeToolCallsWithEvents(
     toolCalls: any[],
+    availableTools: Tool[],
     onToolCall?: (event: ToolCallEvent) => void
   ): Promise<any[]> {
     console.log(`[Agent] ============ executeToolCallsWithEvents START ============`);
     console.log(`[Agent] Tool calls to execute: ${toolCalls.length}`);
+    console.log(`[Agent] Available tools for lookup: ${availableTools.length}`);
 
     const toolPromises = toolCalls.map(async (toolCall) => {
       console.log(`[Agent] 🔍 Looking for tool: ${toolCall.name}`);
 
-      // 查找工具
-      const tool = this.deps.tools?.find((t) => t.name === toolCall.name);
+      // 查找工具（只在可用工具中查找）
+      const tool = availableTools.find((t) => t.name === toolCall.name);
 
       if (!tool) {
-        console.error(`[Agent] ❌ Tool not found: ${toolCall.name}`);
+        console.error(`[Agent] ❌ Tool "${toolCall.name}" is not available (filtered out or not registered)`);
+        console.error(`[Agent] 📋 Available tools: ${availableTools.map(t => t.name).join(", ")}`);
         return {
           id: toolCall.id,
           name: toolCall.name,
           result: {
             success: false,
-            error: `Tool not found: ${toolCall.name}`,
+            error: `Tool "${toolCall.name}" is not available. This may be due to missing API key or configuration. Please use one of the available tools: ${availableTools.map(t => t.name).join(", ")}`,
           },
         };
       }
