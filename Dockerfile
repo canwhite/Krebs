@@ -1,74 +1,31 @@
-# Gateway 服务 Dockerfile
-# 多阶段构建：构建阶段 + 运行阶段
+FROM oven/bun:1-alpine
 
-# ==========================================
-# 阶段 1: 构建依赖
-# ==========================================
-FROM node:22-alpine AS builder
-
-# 设置工作目录,like cd /app
 WORKDIR /app
 
-# 复制 package 文件
-COPY package*.json ./
-COPY pnpm-lock.yaml ./
+# Copy package files
+COPY package.json bun.lock ./
 
-# 安装 pnpm
-RUN npm install -g pnpm@latest
+# Install dependencies
+RUN bun install --frozen-lockfile
 
-# 安装依赖
-RUN pnpm install --frozen-lockfile
+# Copy source code (excluding .env)
+COPY server ./server
+COPY lib ./lib
+COPY frontend ./frontend
+COPY db ./db
+COPY sessions ./sessions
+COPY skills ./skills
+COPY prompts ./prompts
+COPY tools ./tools
+COPY types ./types
+COPY .env.example .env
 
-# ==========================================
-# 阶段 2: 构建 TypeScript
-# ==========================================
-FROM builder AS build
+# Expose port
+EXPOSE 3333
 
-# 复制源代码
-COPY . .
-
-# 构建 TypeScript
-RUN pnpm run build
-
-# ==========================================
-# 阶段 3: 运行时镜像
-# ==========================================
-FROM node:22-alpine AS runtime
-
-# 安装 dumb-init 用于信号处理
-RUN apk add --no-cache dumb-init
-
-# 创建非 root 用户
-RUN addgroup -g 1001 -S krebs && \
-    adduser -S -u 1001 -G krebs krebs
-
-# 设置工作目录
-WORKDIR /app
-
-# 从构建阶段复制 node_modules 和 dist
-COPY --from=build --chown=krebs:krebs /app/node_modules ./node_modules
-COPY --from=build --chown=krebs:krebs /app/dist ./dist
-COPY --from=build --chown=krebs:krebs /app/package*.json ./
-
-# 复制 skills 目录
-COPY --from=build --chown=krebs:krebs /app/skills ./skills
-
-# 创建数据目录
-RUN mkdir -p /app/data /app/data/memory /app/temp /app/workspace/skills && \
-    chown -R krebs:krebs /app/data /app/temp /app/workspace
-
-# 切换到非 root 用户
-USER krebs
-
-# 暴露端口
-# 3000: HTTP API
-# 3001: WebSocket
-EXPOSE 3000 3001
-
-# 健康检查
+# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD node -e "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})" || exit 1
+  CMD wget --no-redirect --tries=1 --spider http://localhost:3333/health || exit 1
 
-# 使用 dumb-init 启动
-ENTRYPOINT ["dumb-init", "--"]
-CMD ["node", "dist/index.js"]
+# Start server - bun will load .env file for environment variables
+CMD ["bun", "run", "start"]

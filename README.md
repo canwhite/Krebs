@@ -1,883 +1,650 @@
 # Krebs
 
-> **一个精简、模块化的 AI Agent 框架**
->
-> **架构评分**: 8.75/10 ⭐ | **最新版本**: v1.0.0
+基于 `@mariozechner/pi-coding-agent` 的 AI 编程助手，支持 Web UI 和交互式聊天。
 
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]()
-[![Architecture](https://img.shields.io/badge/architecture-8.75%2F10-brightgreen)]()
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue)]()
+## 特性
 
----
+- 🤖 **智能代码生成** - 支持 DeepSeek 和 Claude 模型
+- 📝 **文件读写** - 安全的文件操作，所有文件写入到 `custom/` 目录
+- 🔧 **Bash 执行** - 在隔离环境中执行 shell 命令
+- 🔍 **网络搜索** - 集成网络搜索能力
+- 💬 **Web UI** - 实时聊天界面，支持 Markdown 和代码高亮
+- 📊 **流式显示** - 实时显示文件写入进度和内容
+- 🐛 **调试模式** - 可选的事件日志记录功能
 
-## 📋 项目简介
-
-Krebs 是一个轻量级、高度模块化的 AI Agent 框架，专注于提供清晰、可扩展的智能体运行时。
-
-**核心特性**：
-
-- 🎯 **职责分离**：Orchestrator 层专门负责技能调度
-- 🔌 **依赖注入**：完全符合 SOLID 原则
-- 💾 **可插拔存储**：支持多种存储实现
-- 🚦 **智能调度**：Lane 队列系统实现并发控制
-- 🛠️ **技能系统**：可扩展的技能框架
-
-**架构优势**：
-
-- ✅ 高模块化（9/10）
-- ✅ 高可扩展性（9/10）
-- ✅ 高可测试性（8/10）
-- ✅ 易维护性（9/10）
-
----
-
-## 🏗️ 架构设计
-
-### 架构层次（2026-02-04 更新）
-
-```
-┌─────────────────────────────────────────┐
-│           Gateway Layer                 │
-│  HTTP/WebSocket + ChatService Interface │
-└─────────────────────────────────────────┘
-                  ↓
-┌─────────────────────────────────────────┐
-│        Orchestrator Layer 🆕            │
-│     (Skill Dispatch & Routing)          │
-└─────────────────────────────────────────┘
-                  ↓
-┌─────────────────────────────────────────┐
-│           Agent Layer                   │
-│  (LLM Processing + History Management)  │
-└─────────────────────────────────────────┘
-                  ↓
-┌─────────────────────────────────────────┐
-│         Provider Layer                  │
-│  (Anthropic, OpenAI, DeepSeek)          │
-└─────────────────────────────────────────┘
-                  ↓
-┌─────────────────────────────────────────┐
-│         Storage Layer                   │
-│  (ISessionStorage Interface)            │
-└─────────────────────────────────────────┘
-
-┌─────────────────────────────────────────┐
-│        Lane Scheduler                   │
-│  (Command Queue + Concurrency Control)  │
-└─────────────────────────────────────────┘
-```
-
-### 新架构亮点
-
-#### 🎯 Orchestrator 层
-
-**职责分离**：
-
-- **Agent**：专注 LLM 对话管理
-- **Orchestrator**：负责技能调度和编排
-
-```typescript
-// 技能触发和调度
-const orchestrator = agentManager.getOrchestrator("my-agent");
-const result = await orchestrator.process(userMessage, sessionId);
-```
-
-#### 🔌 依赖注入
-
-**移除全局单例**：
-
-- ❌ 之前：`globalSkillRegistry`
-- ✅ 现在：AgentManager 管理，可注入
-
-```typescript
-const agentManager = new AgentManager(
-  { enableSkills: true },
-  { provider, storage, skillRegistry },
-);
-```
-
-#### 💾 Storage 接口化
-
-**支持多种存储**：
-
-- ✅ Markdown 文件存储（默认）
-- ✅ 数据库存储（可扩展）
-- ✅ Redis 缓存（可扩展）
-
-```typescript
-interface ISessionStorage {
-  saveSession(sessionId: string, messages: Message[]): Promise<void>;
-  loadSession(sessionId: string): Promise<Message[] | null>;
-}
-```
-
----
-
-## 📚 核心层次
-
-### 1. Gateway 层 (`src/gateway/`)
-
-- **服务接口**：`IChatService` - 解耦 Gateway 和 Agent
-- **HTTP 服务器**：REST API 接口
-- **WebSocket 服务器**：实时双向通信
-- **协议定义**：统一的请求/响应格式
-
-### 2. Agent 层 (`src/agent/`)
-
-#### Core (`src/agent/core/`)
-
-- **Agent**：LLM 对话管理（196 行）
-- **Orchestrator** 🆕：技能调度和编排（282 行）
-- **AgentManager**：依赖管理和生命周期（187 行）
-
-#### Skills (`src/agent/skills/`)
-
-- **SkillsManager** 🆕：技能管理器（Facade 模式）
-  - 多目录加载（Extra、Bundled、Managed、Workspace）
-  - 技能安装和状态检查
-  - Hot Reload 支持
-- **SkillsLoader** 🆕：技能加载器
-  - 从多个目录加载技能
-  - 优先级合并（高优先级覆盖低优先级）
-  - 解析 frontmatter 和 install specs
-- **SkillInstaller** 🆕：技能安装器
-  - 支持 8 种安装类型（brew、node、go、uv、download、python、ruby、cargo、bash）
-  - 自动检测已安装依赖
-  - Dry-run 模式预览
-- **CLI 命令** 🆕：
-  - `skills create` - 创建新技能目录
-  - `skills add` - 添加技能（目录、文件、URL）
-  - `skills remove` - 移除技能
-  - `skills package` - 打包技能
-  - `skills list/status/install` - 查看和安装技能
-
-### 3. Provider 层 (`src/provider/`)
-
-- **基础接口**：`LLMProvider` 抽象
-- **DeepSeek**：默认 Provider，性价比高
-- **Anthropic**：Claude 模型支持
-- **OpenAI**：GPT 模型支持
-
-### 4. Storage 层 (`src/storage/`)
-
-- **接口定义** 🆕：`ISessionStorage`
-- **Markdown 存储**：会话和文档管理
-- **Frontmatter 支持**：元数据管理
-- **可插拔**：支持自定义存储实现
-
-### 5. Lane 调度系统 (`src/scheduler/`)
-
-- **命令队列**：异步任务调度
-- **并发控制**：Lane 隔离和限流
-- **自动监控**：任务等待时间警告
-
----
-
-## 🚀 快速开始
-
-### 安装依赖
+## 快速开始
 
 ```bash
-npm install
+# 安装依赖
+bun install
+
+# 配置 API Key（二选一）
+export DEEPSEEK_API_KEY=your_key_here    # 推荐，性价比高
+# 或
+export ANTHROPIC_API_KEY=your_key_here
+
+# 启动服务器
+bun run server.ts
+
+# 访问 Web UI
+open http://localhost:3000
 ```
 
-### 配置环境变量
+## 环境配置
 
-复制 `.env.example` 到 `.env` 并配置：
+创建 `.env` 文件：
 
 ```bash
-cp .env.example .env
-```
-
-必需的配置：
-
-```env
-
-# 默认使用 DeepSeek（推荐）
-
+# API Key（必需）
 DEEPSEEK_API_KEY=your_deepseek_key
-
-# 可选：配置其他 Provider
-
+# 或
 ANTHROPIC_API_KEY=your_anthropic_key
-OPENAI_API_KEY=your_openai_key
+
+# 服务器端口（可选，默认 3000）
+PORT=3000
+
+# 日志级别（可选）
+LOG_LEVEL=NORMAL    # 只输出到控制台
+LOG_LEVEL=DEBUG     # 输出到控制台并写入 monitor.log
 ```
 
-**DeepSeek 获取 API Key：**
+## 功能演示
 
-1. 访问 [DeepSeek 开放平台](https://platform.deepseek.com/)
-2. 注册并创建 API Key
-3. 复制到 `.env` 文件的 `DEEPSEEK_API_KEY`
-
-### 启动服务
-
-```bash
-npm run dev
-```
-
-**输出**：
+### 1. 代码生成
 
 ```
-██████╗██╗ ██╗██████╗ ███████╗██████╗
-██╔════╝██║ ██║██╔══██╗██╔════╝██╔══██╗
-██║ ██║ ██║██║ ██║█████╗ ██████╔╝
-██║ ██║ ██║██║ ██║██╔══╝ ██╔══██╗
-╚██████╗╚██████╔╝██████╔╝███████╗██║ ██║
-╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝╚═╝ ╚═╝
-中文版 AI Agent 框架 v1.0.0
+用户：帮我写一个 Python 快速排序
 
-✅ krebs CN 启动成功！
-HTTP: http://localhost:3000
-WebSocket: ws://localhost:3001
+AI：我来帮你写一个 Python 版本的快速排序算法。
+
+📝 准备写入文件...
+📝 正在生成文件: custom/quick_sort.py...
+📝 写入文件: custom/quick_sort.py
+
+📄 内容：
+def quick_sort(arr):
+    """
+    快速排序算法
+    ...
+
+✅ 写入完成！
+📁 文件: custom/quick_sort.py
+📊 大小: 1234 bytes
 ```
 
-### 构建
+### 2. 代码执行
 
-```bash
-npm run build
+```
+用户：运行这个快速排序
+
+AI：好的，我来运行这个快速排序程序来测试一下。
+
+🔧 执行工具: bash
+📝 参数: {"command":"python custom/quick_sort.py"}
+
+测试快速排序算法
+==================================================
+测试用例 1: [64, 34, 25, 12, 22, 11, 90]
+  快速排序（新列表）: [11, 12, 22, 25, 34, 64, 90]
+  ✓ 排序正确
+...
 ```
 
----
+### 3. 文件读取
 
-## 🛠️ CLI 命令
+```
+用户：查看 quick_sort.py 的内容
 
-Krebs 提供了完整的命令行界面（CLI），用于管理 Skills 和查看系统状态。
+AI：好的，让我读取这个文件的内容。
 
-### 基本用法
-
-```bash
-krebs <命令> [选项]
+📄 文件内容：
+def quick_sort(arr):
+    ...
 ```
 
-### 可用命令
+## 项目结构
 
-#### 帮助命令
-
-```bash
-krebs help           # 显示帮助信息
-krebs --help         # 同上
-krebs -h             # 同上
-
-krebs version        # 显示版本信息
-krebs --version      # 同上
-krebs -v             # 同上
+```
+Krebs/
+├── server.ts           # WebSocket 服务器和 Agent 会话管理
+├── index.ts            # HTTP 服务器和静态文件服务
+├── frontend/           # Web UI 前端
+│   ├── chat.html       # HTML 和 CSS 样式
+│   └── chat.tsx        # React 组件和 WebSocket 客户端
+├── lib/                # 工具库
+│   └── logger.ts       # 日志工具（支持 NORMAL/DEBUG 模式）
+├── custom/             # Agent 工作目录（所有文件写入此处）
+├── docs/               # 文档
+│   ├── architecture-overview.md    # 架构概览
+│   ├── write-tool-loading-debug.md # Write Tool Loading 问题排查
+│   ├── write-tool-streaming-display.md # 流式内容显示优化
+│   └── pi-mono-tool-monitoring.md  # pi-mono 工具监听机制
+└── schema/             # 数据模型定义
 ```
 
-#### Skills 命令
+## 工具说明
 
-```bash
-# ========== 技能管理 ==========
+| 工具 | 功能 | 示例 |
+|------|------|------|
+| `read` | 读取文件 | `读取 custom/app.py 的内容` |
+| `write` | 写入文件 | `创建一个 hello.py 文件` |
+| `bash` | 执行命令 | `运行 python hello.py` |
+| `web_search` | 网络搜索 | `搜索 TypeScript 最新特性` |
 
-# 创建新技能
-krebs skills create <name> [选项]
+## 工作原理
 
-# 添加技能（从目录、.skill.gz 或 URL）
-krebs skills add <source> [选项]
+### Tool Calling 流程
 
-# 移除技能
-krebs skills remove <name> [选项]
-
-# 打包技能为 .skill.gz
-krebs skills package <path>
-
-# ========== 技能查看和安装 ==========
-
-# 列出所有技能
-# 验证 skills 格式（新增）
-krebs validate:skills                 # 验证 skills/bundled 目录
-krebs validate:skills <custom-dir>   # 验证自定义目录
-
-krebs skills list
-
-# 仅列出有安装规范的技能
-krebs skills list --install
-
-# 查看技能安装状态
-krebs skills status <技能名>
-
-# 安装单个技能的依赖
-krebs skills install <技能名>
-
-# 安装所有技能的依赖
-krebs skills install --all
-
-# 仅检查安装状态，不实际安装
-krebs skills install <技能名> --check
-
-# 预览将要安装的内容
-krebs skills install <技能名> --dry-run
-
-# 强制重新安装
-krebs skills install <技能名> --force
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         Tool Calling 流程                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  1. 用户输入                                                      │
+│     "帮我创建一个 TypeScript 文件"                                 │
+│            ↓                                                     │
+│  2. LLM 分析需求                                                  │
+│     理解：需要创建文件 → 选择 write 工具                          │
+│            ↓                                                     │
+│  3. 工具调用生成（toolcall_delta）                                │
+│     增量传输：path, content 等参数                                 │
+│            ↓                                                     │
+│  4. 工具执行（tool_execution_start）                             │
+│     writeTool.execute(params) → 2ms 完成                         │
+│            ↓                                                     │
+│  5. 返回结果（tool_execution_end）                               │
+│     { success: true, bytes: 1234 }                               │
+│            ↓                                                     │
+│  6. LLM 根据结果继续                                              │
+│     "文件已创建成功，包含以下函数..."                               │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### 命令示例
+### ReAct 循环模式
 
-#### 技能管理示例
+Agent 使用 ReAct (Reasoning + Acting) 模式：
 
-```bash
-# 创建新技能（带示例文件）
-krebs skills create my-skill --resources scripts,references --examples
+1. **Reason** - LLM 分析当前状态，决定下一步行动
+2. **Act** - 执行工具调用
+3. **Observe** - 观察工具执行结果
+4. **循环** - 重复直到任务完成
 
-# 从本地目录添加技能
-krebs skills add ./my-skill
+### 事件流
 
-# 从 .skill.gz 文件添加技能
-krebs skills add ./my-skill.skill.gz
-
-# 从 URL 下载并添加技能
-krebs skills add https://example.com/skills/my-skill.skill.gz
-
-# 添加到 workspace 目录
-krebs skills add ./my-skill --target=workspace
-
-# 添加并自动安装依赖
-krebs skills add ./my-skill --install
-
-# 强制覆盖已存在的技能
-krebs skills add ./my-skill --force
-
-# 移除技能（带确认提示）
-krebs skills remove my-skill
-
-# 强制移除技能（跳过确认）
-krebs skills remove my-skill --force
-
-# 从特定目录移除技能
-krebs skills remove my-skill --target=managed
-
-# 打包技能
-krebs skills package skills/bundled/my-skill
+```
+toolcall_start      → LLM 开始生成工具调用
+  ↓
+toolcall_delta      → 增量传输参数（实时显示进度）
+  ↓
+toolcall_end        → LLM 完成工具调用生成
+  ↓
+tool_execution_start → 工具开始执行（2-4ms）
+  ↓
+tool_execution_end   → 工具执行完成
 ```
 
-#### 技能安装和查看示例
+## 开发
 
-```bash
-# 查看 test-install 技能的状态
-krebs skills status test-install
-
-# 安装 test-install 技能的依赖
-krebs skills install test-install
-
-# 预览将要安装的内容
-krebs skills install test-install --dry-run
-
-# 安装所有技能的依赖
-krebs skills install --all
-
-# 查看所有有安装规范的技能
-krebs skills list --install
-```
-
-### 命令选项说明
-
-#### Skills Add 选项
-
-| 选项 | 说明 |
-|------|------|
-| `--target=<dir>` | 目标目录：`managed` 或 `workspace`（默认：managed）|
-| `--install` | 添加后自动安装依赖 |
-| `--force` | 强制覆盖已存在的技能 |
-
-#### Skills Remove 选项
-
-| 选项 | 说明 |
-|------|------|
-| `--target=<dir>` | 目标目录：`managed` 或 `workspace`（默认：自动检测）|
-| `--force` | 跳过确认提示 |
-
-#### Skills Create 选项
-
-| 选项 | 说明 |
-|------|------|
-| `--path=<dir>` | 输出目录（默认：skills/bundled/）|
-| `--resources=<list>` | 逗号分隔的资源列表：scripts,references,assets |
-| `--examples` | 在资源目录中创建示例文件 |
-
-#### Skills Install 选项
-
-| 选项 | 说明 |
-|------|------|
-| `--all` | 安装所有技能的依赖 |
-| `--check` | 仅检查安装状态，不实际安装 |
-| `--dry-run` | 预览将要执行的操作 |
-| `--force` | 强制重新安装 |
-
-#### Skills List 选项
-
-| 选项 | 说明 |
-|------|------|
-| `--install` | 仅列出有安装规范的技能 |
-
----
-
-## 📦 Skills 依赖安装
-
-Krebs 支持自动安装 Skill 依赖的功能。当 Skill 的 frontmatter 中定义了 `install` 字段时，系统可以自动安装所需的依赖。
-
-### 支持的安装类型
-
-#### 1. Node.js 包
-
-```yaml
----
-install:
-  - kind: node
-    npmPackage: prettyping
-    label: "Prettyping - 美化ping输出"
-    bins:
-      - prettyping
----
-```
-
-支持的包管理器（自动检测）：npm、pnpm、yarn、bun
-
-#### 2. Homebrew Formula
-
-```yaml
----
-install:
-  - kind: brew
-    formula: ffmpeg
-    label: "FFmpeg 多媒体处理工具"
----
-```
-
-#### 3. Go 模块
-
-```yaml
----
-install:
-  - kind: go
-    goModule: github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-    label: "Go 代码检查工具"
-    bins:
-      - golangci-lint
----
-```
-
-#### 4. Python 包 🆕
-
-```yaml
----
-install:
-  - kind: python
-    pythonPackage: black
-    pythonInstaller: pipx  # 可选: pip, pipx, poetry, uv
-    label: "Python 代码格式化工具"
-    bins:
-      - black
----
-```
-
-支持的包管理器（自动检测或手动指定）：pip、pipx、poetry、uv
-
-#### 5. Ruby Gem 🆕
-
-```yaml
----
-install:
-  - kind: ruby
-    gemPackage: jekyll
-    label: "Jekyll 静态网站生成器"
-    bins:
-      - jekyll
----
-```
-
-#### 6. Cargo/Rust Crate 🆕
-
-```yaml
----
-install:
-  - kind: cargo
-    cratePackage: ripgrep
-    label: "ripgrep 快速搜索工具"
-    bins:
-      - rg
----
-```
-
-#### 7. 下载文件
-
-```yaml
----
-install:
-  - kind: download
-    url: https://example.com/tool.tar.gz
-    extract: true
-    targetDir: ./bin
-    stripComponents: 1
-    label: "下载并解压工具"
-    bins:
-      - tool
----
-```
-
-### Install Spec 字段说明
+### 添加新工具
 
 ```typescript
-interface SkillInstallSpec {
-  // 安装类型
-  kind: "node" | "brew" | "go" | "uv" | "download" | "python" | "ruby" | "cargo";
+import { Type } from "@sinclair/typebox";
 
-  // 可选标识符
-  id?: string;              // 唯一标识
-  label?: string;           // 人类可读描述
+const myTool: ToolDefinition = {
+  name: "my_tool",
+  label: "My Tool",
+  description: "工具描述",
+  parameters: Type.Object({
+    param1: Type.String({ description: "参数说明" }),
+  }),
+  execute: async (_toolCallId, params, _signal, _onUpdate, _ctx) => {
+    // 工具执行逻辑
+    return {
+      content: [{ type: "text", text: "执行结果" }],
+      details: {},
+    };
+  },
+};
 
-  // 可执行文件列表（用于检查安装状态）
-  bins?: string[];          // 可执行文件名列表
-
-  // 平台限制
-  os?: string[];            // 限制操作系统：["darwin", "linux"]
-
-  // 下载相关
-  targetDir?: string;       // 目标目录
-  extract?: boolean;        // 是否解压
-  archive?: string;         // 归档类型：tar.gz, zip
-  stripComponents?: number; // 解压时去掉的目录层级
-
-  // Kind 特定字段
-  formula?: string;         // brew: formula 名称
-  npmPackage?: string;      // node: npm 包名
-  goModule?: string;        // go: 模块路径
-  uvPackage?: string;       // uv: 包名
-  pythonPackage?: string;   // python 或 uv: Python 包名
-  pythonInstaller?: string; // python: 安装器类型（pip/pipx/poetry/uv）
-  gemPackage?: string;      // ruby: gem 包名
-  cratePackage?: string;    // cargo: crate 包名
-  url?: string;             // download: 下载 URL
-}
+// 在 createAgentSession 中注册
+tools: [
+  createReadTool(cwd),
+  createBashTool(join(cwd, "custom")),
+  createWriteTool(join(cwd, "custom")),
+  myTool,  // 添加新工具
+],
 ```
 
-### 安装机制
-
-1. **安装检查**：系统首先检查依赖是否已安装
-2. **缓存机制**：已安装的依赖会被缓存，避免重复安装
-3. **超时控制**：每个安装操作有默认超时时间
-4. **Dry-run 模式**：可以预览将要安装的内容而不实际执行
-
-### 示例 Skill
-
-```markdown
----
-name: VideoProcessor
-description: "视频处理技能"
-install:
-  - kind: brew
-    formula: ffmpeg
-    label: "FFmpeg 多媒体处理工具"
-
-  - kind: node
-    npmPackage: @ffprobe-installer/ffprobe
-    label: "FFprobe 探测工具"
-
-  - kind: download
-    url: https://example.com/video-tools.tar.gz
-    extract: true
-    targetDir: ./bin
-    bins:
-      - video-tool
----
-
-# VideoProcessor Skill
-
-这个技能用于视频处理和转码...
-
-## 使用方法
-
-```typescript
-await agent.process("处理这个视频文件");
-```
-```
-
----
-
-## 💡 API 使用示例
-
-### 发送聊天消息
+### 日志调试
 
 ```bash
-curl -X POST http://localhost:3000/api/chat \\
--H "Content-Type: application/json" \\
--d '{
-"id": "test-001",
-"method": "chat.send",
-"params": {
-"agentId": "default",
-"sessionId": "session-001",
-"message": "你好！"
-}
-}'
+# 开启 DEBUG 模式
+echo "LOG_LEVEL=DEBUG" > .env
+
+# 重启服务器
+bun run server.ts
+
+# 查看日志
+tail -f monitor.log
 ```
 
-**响应**：
+## 技术栈
 
+- **后端**: Bun + TypeScript
+- **前端**: Preact + Markdown + Highlight.js
+- **AI**: `@mariozechner/pi-coding-agent`
+- **通信**: WebSocket
+- **样式**: 自定义 CSS（暗色主题）
+
+## 外部 API 调用指南
+
+Krebs 提供了 HTTP API 和 WebSocket 接口，支持外部应用调用。
+
+### 认证方式
+
+#### 方式 A：Authorization Header（推荐）
+
+```bash
+curl http://localhost:3000/api/sessions/list \
+  -H "Authorization: Bearer YOUR_TOKEN_HERE_HERE"
+```
+
+#### 方式 B：Cookie
+
+```bash
+# 步骤 1：认证获取 Cookie
+curl -X POST http://localhost:3000/api/auth \
+  -H "Content-Type: application/json" \
+  -d '{"token": "YOUR_TOKEN_HERE_HERE"}' \
+  -c cookies.txt
+
+# 步骤 2：使用 Cookie 调用 API
+curl http://localhost:3000/api/sessions/list -b cookies.txt
+```
+
+### HTTP API 端点
+
+#### 1. 发送消息（对话）
+
+**POST** `/api/messages`
+
+发送消息并获取 AI 响应：
+
+```bash
+curl -X POST http://localhost:3000/api/messages \
+  -H "Authorization: Bearer YOUR_TOKEN_HERE" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "你好，请介绍一下你自己"
+  }'
+```
+
+**响应：**
 ```json
 {
-"id": "test-001",
-"result": {
-"response": "你好！我是 AI 助手，有什么可以帮助您的吗？",
-"usage": {
-"promptTokens": 20,
-"completionTokens": 15,
-"totalTokens": 35
-}
-}
+  "sessionId": "session_abc123",
+  "response": "你好！我是一个 AI 助手..."
 }
 ```
 
-### WebSocket 流式响应
+#### 2. 继续对话（保持上下文）
+
+**POST** `/api/messages`
+
+使用 `sessionId` 继续之前的对话：
+
+```bash
+curl -X POST http://localhost:3000/api/messages \
+  -H "Authorization: Bearer YOUR_TOKEN_HERE" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "我刚才问了你什么？",
+    "sessionId": "session_abc123"
+  }'
+```
+
+#### 3. 获取所有会话列表
+
+**GET** `/api/sessions/list`
+
+```bash
+curl http://localhost:3000/api/sessions/list \
+  -H "Authorization: Bearer YOUR_TOKEN_HERE"
+```
+
+**响应：**
+```json
+{
+  "sessions": [
+    {
+      "id": "session_abc123",
+      "session_id": "session_abc123",
+      "first_question": "你好，请介绍一下你自己",
+      "created_at": 1712000000000
+    }
+  ]
+}
+```
+
+#### 4. 获取会话历史消息
+
+**GET** `/api/sessions/:sessionId`
+
+```bash
+curl http://localhost:3000/api/sessions/session_abc123 \
+  -H "Authorization: Bearer YOUR_TOKEN_HERE"
+```
+
+**响应：**
+```json
+{
+  "sessionId": "session_abc123",
+  "messages": [
+    {
+      "role": "user",
+      "content": "你好，请介绍一下你自己"
+    },
+    {
+      "role": "assistant",
+      "content": "你好！我是一个 AI 助手..."
+    }
+  ]
+}
+```
+
+#### 5. 删除会话
+
+**DELETE** `/api/sessions/:sessionId`
+
+```bash
+curl -X DELETE http://localhost:3000/api/sessions/session_abc123 \
+  -H "Authorization: Bearer YOUR_TOKEN_HERE"
+```
+
+#### 6. 健康检查
+
+**GET** `/health`
+
+```bash
+curl http://localhost:3000/health
+```
+
+**响应：**
+```json
+{
+  "status": "ok",
+  "sessions": 5
+}
+```
+
+### WebSocket 实时通信
+
+WebSocket 支持实时流式响应，适合需要即时反馈的场景。
+
+#### 连接和认证
 
 ```javascript
-const ws = new WebSocket("ws://localhost:3001");
+const ws = new WebSocket("ws://localhost:3000/ws");
 
 ws.onopen = () => {
-ws.send(JSON.stringify({
-id: "ws-001",
-method: "chat.send",
-params: {
-agentId: "default",
-sessionId: "session-001",
-message: "写一首诗",
-stream: true
-}
-}));
+  // 连接建立后发送认证消息
+  ws.send(JSON.stringify({ type: "auth" }));
 };
 
 ws.onmessage = (event) => {
-const data = JSON.parse(event.data);
+  const data = JSON.parse(event.data);
 
-if (data.type === "chat.chunk") {
-console.log("Chunk:", data.data.chunk);
-} else if (data.type === "chat.complete") {
-console.log("Complete!");
-}
+  if (data.type === "auth_success") {
+    console.log("认证成功");
+    // 现在可以发送消息
+  }
 };
 ```
 
----
+#### 发送消息
 
-## 📁 项目结构
-
-```
-krebs/
-├── src/
-│ ├── agent/ # Agent 层
-│ │ ├── core/ # 核心逻辑
-│ │ │ ├── agent.ts # Agent 实现（196 行）
-│ │ │ ├── orchestrator.ts # Orchestrator 🆕（282 行）
-│ │ │ ├── manager.ts # AgentManager（187 行）
-│ │ │ └── index.ts # 模块导出
-│ │ ├── skills/ # 技能系统
-│ │ │ ├── base.ts # 技能接口和注册表
-│ │ │ ├── builtin.ts # 内置技能
-│ │ │ └── index.ts
-│ │ └── tools/ # 工具系统
-│ ├── gateway/ # Gateway 层
-│ │ ├── service/ # 服务接口 🆕
-│ │ │ └── chat-service.ts
-│ │ ├── protocol/ # 协议定义
-│ │ └── server/ # 服务器实现
-│ │ ├── http-server.ts
-│ │ └── ws-server.ts
-│ ├── provider/ # Provider 层
-│ │ ├── base.ts # LLMProvider 接口
-│ │ ├── deepseek.ts # DeepSeek 实现
-│ │ ├── anthropic.ts # Anthropic 实现
-│ │ └── openai.ts # OpenAI 实现
-│ ├── scheduler/ # 调度系统
-│ │ └── lanes.ts # Lane 调度
-│ ├── storage/ # 存储层
-│ │ ├── interface.ts # 存储接口 🆕
-│ │ └── markdown/ # Markdown 实现
-│ ├── cli/ # CLI 命令 🆕
-│ │ ├── index.ts # CLI 入口
-│ │ └── commands/ # 子命令
-│ │   └── skills.ts # Skills 命令
-│ ├── shared/ # 共享模块
-│ │ ├── config.ts # 配置管理
-│ │ └── logger.ts # 日志系统
-│ ├── types/ # 类型定义
-│ └── index.ts # 主入口
-├── docs/ # 文档目录
-│ ├── architecture-analysis.md # 架构分析
-│ ├── architecture-evaluation-2026-02-04.md # 架构评估 🆕
-│ ├── refactor-improvements-2026-02-04.md # 重构改进 🆕
-│ └── refactor-summary.md # 重构总结 🆕
-├── schema/ # 任务文档
-├── config/ # 配置文件
-├── data/ # 数据目录
-├── package.json
-├── tsconfig.json
-├── production.md # 项目全局文档 🆕
-└── README.md
+```javascript
+ws.send(JSON.stringify({
+  type: "prompt",
+  message: "请用 Python 写一个快速排序"
+}));
 ```
 
----
+#### 接收流式响应
 
-## ✨ 特性
+```javascript
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
 
-### 核心特性
+  switch (data.type) {
+    case "text_delta":
+      // 接收文本增量
+      console.log(data.delta);
+      break;
 
-- ✅ **Orchestrator 层** 🆕 - 技能调度和编排
-- ✅ **依赖注入** - 移除全局单例，完全符合 SOLID 原则
-- ✅ **Storage 接口化** - 支持多种存储实现
-- ✅ **Gateway 解耦** - 通过服务接口解耦
-- ✅ **精简架构** - 专注核心功能
-- ✅ **模块化设计** - 高内聚低耦合
+    case "tool_call_start":
+      // AI 开始调用工具
+      console.log(`调用工具: ${data.tool}`);
+      break;
 
-### 功能特性
+    case "tool_call_delta":
+      // 工具调用增量更新（如文件写入进度）
+      if (data.tool === "write") {
+        console.log(`正在写入文件: ${data.path}`);
+      }
+      break;
 
-- ✅ **多 Provider 支持** - DeepSeek、Anthropic、OpenAI
-- ✅ **Markdown 存储** - 会话和文档管理（带 Frontmatter）
-- ✅ **工具系统** - 可扩展的工具框架
-- ✅ **Skills 管理系统** 🆕 - 完整的技能添加、移除、查看和管理
-- ✅ **依赖自动安装** 🆕 - Skills 依赖自动安装（8 种类型：brew、node、go、uv、download、python、ruby、cargo）
-- ✅ **CLI 命令** 🆕 - 完整的命令行界面
-- ✅ **Lane 并发控制** - 命令队列和限流
-- ✅ **HTTP + WebSocket** - 双协议支持
-- ✅ **流式响应** - 实时流式输出
-- ✅ **会话管理** - 完整的会话历史
+    case "tool_end":
+      // 工具调用完成
+      console.log(`工具执行完成: ${data.success ? "成功" : "失败"}`);
+      break;
 
-### 质量特性
+    case "response_end":
+      // 完整响应结束
+      console.log("对话完成");
+      break;
 
-- ✅ **类型安全** - 完整的 TypeScript 类型
-- ✅ **错误处理** - 优雅的错误处理和恢复
-- ✅ **日志系统** - 结构化日志
-- ✅ **配置管理** - 灵活的配置系统
-
----
-
-## 🎯 支持的模型
-
-### DeepSeek（默认）
-
-```typescript
-"deepseek-chat" // 通用对话模型
-"deepseek-coder" // 代码专用模型
+    case "error":
+      console.error("错误:", data.message);
+      break;
+  }
+};
 ```
 
-### Anthropic Claude
+#### 停止生成
 
-```typescript
-"claude-3-5-sonnet-20241022"
-"claude-3-5-haiku-20241022"
-"claude-3-opus-20240229"
+```javascript
+ws.send(JSON.stringify({ type: "stop" }));
 ```
 
-### OpenAI GPT
+### 完整示例代码
 
-```typescript
-"gpt-4o"
-"gpt-4o-mini"
-"gpt-4-turbo"
-"gpt-3.5-turbo"
+#### Python 示例
+
+```python
+import requests
+
+TOKEN = "your_token_here"
+BASE_URL = "http://localhost:3000"
+
+headers = {
+    "Authorization": f"Bearer {TOKEN}",
+    "Content-Type": "application/json"
+}
+
+# 发送消息
+response = requests.post(
+    f"{BASE_URL}/api/messages",
+    headers=headers,
+    json={"message": "什么是递归？"}
+)
+
+data = response.json()
+print(f"Session ID: {data['sessionId']}")
+print(f"Response: {data['response']}")
+
+# 继续对话
+response2 = requests.post(
+    f"{BASE_URL}/api/messages",
+    headers=headers,
+    json={
+        "message": "能给我举个例子吗？",
+        "sessionId": data['sessionId']
+    }
+)
+
+print(f"Response 2: {response2.json()['response']}")
 ```
 
----
+#### JavaScript/Node.js 示例
 
-## 🛠️ 开发
+```javascript
+const TOKEN = "your_token_here";
+const BASE_URL = "http://localhost:3000";
 
-### 运行开发模式
+async function chat(message, sessionId = null) {
+  const response = await fetch(`${BASE_URL}/api/messages`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      message,
+      sessionId
+    }),
+  });
 
-```bash
-npm run dev
+  const data = await response.json();
+  return data;
+}
+
+// 使用示例
+chat("帮我写一个快速排序算法")
+  .then(result => {
+    console.log("Session:", result.sessionId);
+    console.log("Response:", result.response);
+
+    // 继续对话
+    return chat("这段代码的时间复杂度是多少？", result.sessionId);
+  })
+  .then(result2 => {
+    console.log("Response 2:", result2.response);
+  });
 ```
 
-### 构建项目
+#### WebSocket 完整示例
 
-```bash
-npm run build
+```javascript
+class KrebsClient {
+  constructor(url, token) {
+    this.url = url;
+    this.token = token;
+    this.ws = null;
+    this.messageHandlers = [];
+  }
+
+  connect() {
+    return new Promise((resolve, reject) => {
+      this.ws = new WebSocket(this.url);
+
+      this.ws.onopen = () => {
+        // 发送认证
+        this.ws.send(JSON.stringify({ type: "auth" }));
+      };
+
+      this.ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+
+        if (data.type === "auth_success") {
+          resolve();
+        } else {
+          // 触发消息处理器
+          this.messageHandlers.forEach(handler => handler(data));
+        }
+      };
+
+      this.ws.onerror = (error) => reject(error);
+    });
+  }
+
+  onMessage(handler) {
+    this.messageHandlers.push(handler);
+  }
+
+  sendMessage(message) {
+    this.ws.send(JSON.stringify({
+      type: "prompt",
+      message
+    }));
+  }
+
+  stop() {
+    this.ws.send(JSON.stringify({ type: "stop" }));
+  }
+
+  disconnect() {
+    this.ws.close();
+  }
+}
+
+// 使用示例
+const client = new KrebsClient("ws://localhost:3000/ws", "your_token");
+
+await client.connect();
+
+client.onMessage((data) => {
+  if (data.type === "text_delta") {
+    process.stdout.write(data.delta);
+  }
+});
+
+client.sendMessage("介绍一下 Python");
 ```
 
-### 运行测试
+### 错误处理
 
-```bash
-npm test
+#### HTTP 状态码
+
+- **200** - 请求成功
+- **400** - 请求参数错误
+- **401** - 未授权（Token 无效或缺失）
+- **404** - 资源不存在（如会话不存在）
+- **500** - 服务器内部错误
+
+#### 错误响应格式
+
+```json
+{
+  "error": "错误描述信息"
+}
 ```
 
-### 代码检查
+### 安全建议
 
-```bash
-npm run lint # ESLint 检查
-npm run format # Prettier 格式化
-```
+1. **生产环境使用 HTTPS**
+   - 设置 `NODE_ENV=production` 环境变量
+   - Cookie 将自动添加 `Secure` 标志
 
----
+2. **定期更换 Token**
+   - 修改 `.env` 文件中的 `TOKEN` 值
+   - 重启服务器
 
-## 📖 文档
+3. **限制访问来源**
+   - 使用防火墙限制 IP 访问
+   - 只允许可信网络访问
 
-- **[架构分析](docs/architecture-analysis.md)** - 原始架构分析
-- **[架构评估](docs/architecture-evaluation-2026-02-04.md)** - 重构后评估 🆕
-- **[重构改进](docs/refactor-improvements-2026-02-04.md)** - 详细改进记录 🆕
-- **[重构总结](docs/refactor-summary.md)** - 一分钟速览 🆕
-- **[项目全局文档](production.md)** - 项目全局文档 🆕
+详细的安全说明请参考 [SECURITY.md](./SECURITY.md) 和 [docs/AUTHENTICATION.md](./docs/AUTHENTICATION.md)。
 
----
+## 参考资源
 
-## 📊 架构质量
+- [pi-mono GitHub](https://github.com/badlogic/pi-mono)
+- [pi-coding-agent 文档](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent)
+- [Anthropic Tool Use](https://docs.anthropic.com/claude/docs/tool-use)
+- [项目文档](./docs/)
+- [认证机制详细说明](./docs/AUTHENTICATION.md)
 
-| 维度         | 评分        | 说明                               |
-| ------------ | ----------- | ---------------------------------- |
-| **模块化**   | 9/10        | ⭐⭐⭐⭐⭐ 清晰的分层设计          |
-| **可扩展性** | 9/10        | ⭐⭐⭐⭐⭐ Provider/Storage 可扩展 |
-| **可测试性** | 8/10        | ⭐⭐⭐⭐ 依赖注入完善              |
-| **可维护性** | 9/10        | ⭐⭐⭐⭐⭐ 代码清晰，职责单一      |
-| **性能**     | 9/10        | ⭐⭐⭐⭐⭐ Lane 调度优秀           |
-| **安全性**   | 8/10        | ⭐⭐⭐⭐ 基本安全措施              |
-| **综合评分** | **8.75/10** | ⭐⭐⭐⭐⭐ **优秀**                |
-
-**SOLID 原则合规性**：
-
-- ✅ 单一职责（SRP）：8.7/10
-- ✅ 开闭原则（OCP）：9.0/10
-- ✅ 里氏替换（LSP）：9.3/10
-- ✅ 接口隔离（ISP）：9.7/10
-- ✅ 依赖倒置（DIP）：9.5/10
-
----
-
-## 🔄 版本历史
-
-### v1.0.0 (2026-02-04) - 架构重构版 🎉
-
-**重大改进**：
-
-- 🆕 引入 Orchestrator 层，分离 Agent 职责
-- 🔄 移除全局单例，改用依赖注入
-- 🔌 Storage 接口化，支持多种实现
-- 🌐 Gateway 通过服务接口解耦
-- 📦 Skills 依赖自动安装功能 🆕
-  - 支持 npm、brew、go、uv、download、python、ruby、cargo 八种安装类型
-  - 自动检测已安装依赖
-  - Dry-run 模式预览安装
-- 🖥️ 完整的 CLI 命令支持 🆕
-  - `krebs skills install` - 安装技能依赖
-  - `krebs skills list` - 列出技能
-  - `krebs skills status` - 查看安装状态
-  - 支持 `--all`, `--check`, `--dry-run`, `--force` 选项
-- ✅ 架构评分从 7.2/10 提升至 8.75/10
-
-**详细记录**：
-
-- [重构改进记录](docs/refactor-improvements-2026-02-04.md)
-- [架构评估报告](docs/architecture-evaluation-2026-02-04.md)
-
----
-
-## 🤝 参考
-
-本项目学习和借鉴了以下项目的设计思想：
-
-- [openclaw-cn-ds](https://github.com/clawdbot/openclaw-cn-ds) - Agent 和工具系统
-
----
-
-## 📜 许可证
+## License
 
 MIT
-
----
-
-** Made with ❤️ by Claude Code Agent**

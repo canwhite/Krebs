@@ -1,63 +1,45 @@
 {
-  "name": "krebs",
+  "name": "mini_agent",
   "version": "1.0.0",
-  "description": "krebs CN - 精简版 AI Agent 框架",
+  "description": "Simple Agent implementation based on pi-coding-agent",
+  "module": "index.ts",
   "type": "module",
-  "main": "dist/index.js",
-  "bin": {
-    "krebs": "dist/index.js"
-  },
+  "private": true,
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "build": "tsc && tsc-alias",
-    "start": "node dist/index.js",
-    "test": "vitest",
-    "lint": "oxlint src",
-    "format": "oxfmt --write src",
-    "validate:skills": "tsx dist/cli/index.js validate:skills"
-  },
-  "keywords": [
-    "ai",
-    "agent",
-    "llm",
-    "framework"
-  ],
-  "author": "",
-  "license": "MIT",
-  "engines": {
-    "node": ">=22.0.0"
+    "start": "bun run server/index.ts",
+    "example": "bun run examples/index.ts --example",
+    "test": "bun run test-gateway.ts",
+    "build": "bun build --no-bundle server/index.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.32.1",
-    "@clack/prompts": "^0.11.0",
-    "@mariozechner/pi-coding-agent": "^0.51.5",
-    "@sinclair/typebox": "^0.34.47",
-    "@types/multer": "^2.0.0",
-    "better-sqlite3": "^12.6.2",
-    "chalk": "^5.6.2",
-    "chokidar": "^5.0.0",
-    "dotenv": "^17.2.3",
-    "express": "^5.2.1",
-    "multer": "^2.0.2",
-    "openai": "^4.83.0",
-    "proper-lockfile": "^4.1.2",
-    "sqlite-vec": "^0.1.7-alpha.2",
-    "tslog": "^4.10.2",
-    "ws": "^8.19.0",
-    "yaml": "^2.8.2",
-    "zod": "^3.23.8"
+    "@mariozechner/pi-ai": "^0.66.1",
+    "@mariozechner/pi-coding-agent": "^0.66.1",
+    "@sinclair/typebox": "^0.34.49",
+    "@tintinweb/pi-subagents": "^0.5.2",
+    "@tintinweb/pi-tasks": "^0.4.2",
+    "hast-util-to-jsx-runtime": "^2.3.6",
+    "katex": "^0.16.40",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-markdown": "^10.1.0",
+    "rehype-highlight": "^7.0.2",
+    "rehype-react": "^8.0.0",
+    "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
+    "remark-rehype": "^11.1.2",
+    "unified": "^11.0.5"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["@google/genai", "koffi", "protobufjs"]
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
-    "@types/express": "^5.0.6",
-    "@types/node": "^25.0.10",
-    "@types/proper-lockfile": "^4.1.4",
-    "@types/ws": "^8.18.1",
-    "oxfmt": "0.26.0",
-    "oxlint": "^1.41.0",
-    "tsc-alias": "^1.8.16",
-    "tsx": "^4.21.0",
-    "typescript": "^5.9.3",
-    "vitest": "^4.0.18"
+    "@types/bun": "latest",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "bun-types": "^1.3.12",
+    "typescript": "^5"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
   }
 }

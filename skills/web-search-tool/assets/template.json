@@ -1,0 +1,9 @@
+{
+  "name": "web-search-tool",
+  "version": "1.0.0",
+  "description": "Web search skill example with curl",
+  "scripts": {
+    "search": "./scripts/search.sh",
+    "fetch": "./scripts/fetch-page.sh"
+  }
+}

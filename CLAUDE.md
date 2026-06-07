@@ -1,701 +1,164 @@
-# Claude Code 执行协议：全感知任务管理模式 v2.0
+Default to using Bun instead of Node.js.
 
-> [!CRITICAL]
-> **⚠️ 核心原则：先文档
-> **收到 START: 指令时，有两个必须操作**
-> 1.必须先检查是否有production.md，如果有就去参考，如果没有没有就基于项目结构创建;
-> 2.检查完production.md，必须创建 schema/task_*.md，然后才能执行任务**
+- Use `bun <file>` instead of `node <file>` or `ts-node <file>`
+- Use `bun test` instead of `jest` or `vitest`
+- Use `bun build <file.html|file.ts|file.css>` instead of `webpack` or `esbuild`
+- Use `bun install` instead of `npm install` or `yarn install` or `pnpm install`
+- Use `bun run <script>` instead of `npm run <script>` or `yarn run <script>` or `pnpm run <script>`
+- Bun automatically loads .env, so don't use dotenv.
 
----
+## APIs
 
-## 核心行为准则
-1. **先文档后执行** - 启动会话或开始新任务前，必须先同步 `production.md` 和 `schema/` 目录下的状态
-2. **强制刷新** - 每一次回复的末尾必须包含【当前快照】
-3. **文件驱动** - 所有进度必须落实到 `schema/task_*.md`
+- `Bun.serve()` supports WebSockets, HTTPS, and routes. Don't use `express`.
+- `bun:sqlite` for SQLite. Don't use `better-sqlite3`.
+- `Bun.redis` for Redis. Don't use `ioredis`.
+- `Bun.sql` for Postgres. Don't use `pg` or `postgres.js`.
+- `WebSocket` is built-in. Don't use `ws`.
+- Prefer `Bun.file` over `node:fs`'s readFile/writeFile
+- Bun.$`ls` instead of execa.
 
----
+## Testing
 
-## 协议详细定义
+Use `bun test` to run tests.
 
-### 0. 全局认知 (Global Awareness)
-- **初始检查**: 启动时检查根目录是否存在 `production.md`。若无，必须执行 `ls -R` 并读取核心文件创建它。
-- **内容要求**: [项目定位]、[核心架构]、[技术栈]、[目录结构说明]、[部署流程]。
-- **动态维护**: 架构变更或模块新增时，同步更新此文件。
+```ts#index.test.ts
+import { test, expect } from "bun:test";
 
-### 1. 任务启动 (Initialization)
-
-#### 触发条件
-收到以 `START: [任务描述]` 开头的指令。
-
-#### ⭐⭐⭐ 强制执行流程 (CRITICAL)
-
-**步骤1: 立即创建任务文档** (MANDATORY!)
-
-```bash
-# 必须立即执行！
-date +"%y%m%d"  # 获取日期
+test("hello world", () => {
+  expect(1).toBe(1);
+});
 ```
 
-使用 `Write` 工具创建 `schema/task_[简码]_[YYMMDD]_[HHMMSS].md`，内容必须包含：
+## Frontend
 
-```markdown
-# Task: [任务描述]
+Use HTML imports with `Bun.serve()`. Don't use `vite`. HTML imports fully support React, CSS, Tailwind.
 
-**任务ID**: task_[简码]_[YYMMDD]_[HHMMSS]
-**创建时间**: [当前日期]
-**状态**: 进行中
-**目标**: [一句话目标]
+Server:
 
-## 最终目标
-[列出最终要达到的目标]
+```ts#index.ts
+import index from "./index.html"
 
-## 拆解步骤
-### 1. [步骤1]
-- [ ] 子任务1.1
-- [ ] 子任务1.2
-
-### 2. [步骤2]
-- [ ] 子任务2.1
-- [ ] 子任务2.2
-
-## 当前进度
-### 正在进行: [当前步骤]
-[简要说明当前在做什么]
-
-## 下一步行动
-1. [具体下一步要做的原子动作]
-2. [下一步...]
+Bun.serve({
+  routes: {
+    "/": index,
+    "/api/users/:id": {
+      GET: (req) => {
+        return new Response(JSON.stringify({ id: req.params.id }));
+      },
+    },
+  },
+  // optional websocket support
+  websocket: {
+    open: (ws) => {
+      ws.send("Hello, world!");
+    },
+    message: (ws, message) => {
+      ws.send(message);
+    },
+    close: (ws) => {
+      // handle close
+    }
+  },
+  development: {
+    hmr: true,
+    console: true,
+  }
+})
 ```
 
-**步骤2: 创建TodoWrite列表** (RECOMMENDED)
+HTML files can import .tsx, .jsx or .js files directly and Bun's bundler will transpile & bundle automatically. `<link>` tags can point to stylesheets and Bun's CSS bundler will bundle.
 
-```php
-// 使用TodoWrite工具创建
-[
-    ["content": "步骤1", "status": "in_progress", "activeForm": "正在做步骤1"],
-    ["content": "步骤2", "status": "pending", "activeForm": "等待做步骤2"]
-]
+```html#index.html
+<html>
+  <body>
+    <h1>Hello, world!</h1>
+    <script type="module" src="./frontend.tsx"></script>
+  </body>
+</html>
 ```
 
-**步骤3: 开始执行任务**
+With the following `frontend.tsx`:
 
-按照任务文档逐步执行，每完成一步更新任务文档。
+```tsx#frontend.tsx
+import React from "react";
 
-#### 🚨 验证检查机制
+// import .css files directly and it works
+import './index.css';
 
-在开始执行任务前，系统会自动检查：
+import { createRoot } from "react-dom/client";
 
-```
-检查清单:
-□ schema/task_*_*.md 文件是否存在？
-  └─ ❌ 如果不存在 → 立即停止，提示："错误：必须先创建任务文档"
+const root = createRoot(document.body);
 
-□ 任务文档是否包含"最终目标"和"拆解步骤"？
-  └─ ❌ 如果不完整 → 补充完整后再执行
-
-□ TodoWrite列表是否已创建？
-  └─ ⚠️ 可选，但强烈推荐
-```
-
-> [!WARNING]
-> **禁止行为**:
-> - ❌ 收到 `START:` 后直接使用 TodoWrite 而不创建任务文档
-> - ❌ 收到 `START:` 后直接开始执行任务
-> - ❌ 跳过任务文档创建步骤
-
-> [!SUCCESS]
-> **正确行为**:
-> - ✅ 收到 `START:` → 立即创建 `schema/task_*.md`
-> - ✅ 然后创建 TodoWrite（可选）
-> - ✅ 最后开始执行任务
-
----
-
-### 2. 动态上下文刷新 (Dynamic Refreshing)
-
-- **执行规则**: 任务期间的**每一次回复**，必须执行：
-  1. 完成实际的代码/命令操作
-  2. ⭐⭐⭐ **强制检查任务文档**
-     - 如果不存在 `schema/task_*.md` → **立即停止当前工作**
-     - 创建任务文档并补充已完成的内容
-     - 然后继续执行
-  3. 更新 `schema/` 下的任务文档进度
-  4. **末尾重述**：在回复末尾必须包裹以下代码块
-
-```text
-[项目全局状态]: 已同步至 production.md
-[当前任务文件]: <schema/文件名>
-[当前目标]: <一句话目标>
-[已完成]: <最近一步操作>
-[下一步]: <紧接着要执行的原子动作>
-```
-
----
-
-### 3. 任务结项 (Termination)
-
-- **触发条件**: 收到 `DONE:`
-- **动作**:
-  1. 代码一致性检查
-  2. 更新 `production.md` 反映新状态
-  3. 归档：将任务文件移至 `schema/archive/`
-  4. 确认关闭并停止回复末尾的重述
-
----
-
-### 4. 记忆对齐 (Context Re-sync)
-
-- 会话重启后，依次 `cat production.md` 和最新的 `schema/task_*.md`，对齐认知后再回复
-
----
-
-### 5. 错误恢复机制 (Error Recovery)
-
-#### 场景1: 忘记创建任务文档
-
-**症状**: 收到 `START:` 指令，直接开始执行
-
-**恢复步骤**:
-1. **立即停止**当前工作
-2. 创建 `schema/task_[简码]_[YYMMDD]_[HHMMSS].md`
-3. 从对话历史提取已完成的工作内容
-4. 补充到任务文档：
-   - 最终目标
-   - 已完成的步骤
-   - 剩余步骤
-5. 继续执行
-
-**示例**:
-```
-❌ 错误行为:
-用户: "START: 检查日志"
-AI: 好的，让我开始检查...  ← 忘记创建文档
-
-✅ 正确行为:
-用户: "START: 检查日志"
-AI: 收到指令，先创建任务文档...
-    [Write schema/task_check_logs_260102.md]
-    [TodoWrite ...]
-    现在开始检查...
-```
-
-#### 场景2: 执行中才发现没有任务文档
-
-**恢复步骤**:
-1. 在下一次回复中立即创建
-2. 从已完成的对话中提取信息
-3. 补充完整任务文档
-4. 继续执行
-
-**示例**:
-```markdown
-// 执行中途发现错误
-AI: （检查）发现没有任务文档，让我立即创建...
-    [创建 schema/task_xxx.md]
-    已补充前面的工作内容，继续...
-```
-
----
-
-### 6. TodoWrite 工具使用规范
-
-#### ✅ 适合使用 TodoWrite 的场景
-
-1. **已创建任务文档后** - 拆分子任务
-2. **非START任务** - 如：
-   - "检查这个文件"
-   - "修复这个bug"
-   - "优化这个函数"
-3. **临时快速任务** - 不需要完整文档的任务
-
-#### ❌ 禁止使用 TodoWrite 的场景
-
-1. **收到 START: 指令时** - 必须先创建 `schema/task_*.md`
-2. **任务文档创建之前** - 绝对禁止
-3. **跳过文档创建** - 直接用TodoWrite代替
-
-#### 正确流程对比
-
-```
-┌─────────────────────────────────────────┐
-│ ❌ 错误流程 (FORBIDDEN)                  │
-├─────────────────────────────────────────┤
-│ 用户: "START: 检查日志"                  │
-│    ↓                                    │
-│ AI: TodoWrite [...] ← 错误！            │
-│    ↓                                    │
-│ 开始执行 ← 跳过了文档创建！              │
-└─────────────────────────────────────────┘
-
-┌─────────────────────────────────────────┐
-│ ✅ 正确流程 (REQUIRED)                   │
-├─────────────────────────────────────────┤
-│ 用户: "START: 检查日志"                  │
-│    ↓                                    │
-│ AI: Write schema/task_xxx.md ← 先文档   │
-│    ↓                                    │
-│ AI: TodoWrite [...] ← 然后列表           │
-│    ↓                                    │
-│ 开始执行 ← 遵循协议！                    │
-└─────────────────────────────────────────┘
-```
-
-#### 决策树
-
-```
-收到用户指令
-    ↓
-是 "START:" 开头吗?
-    ├─ 是 →
-    │   ├─ schema/task_*.md 是否存在?
-    │   │   ├─ 否 → [必须] 先创建文档 → TodoWrite → 执行
-    │   │   └─ 是 → TodoWrite → 执行
-    │
-    └─ 否 →
-        ├─ 是否需要任务文档?
-        │   ├─ 是 → 创建文档 → 执行
-        │   └─ 否 → TodoWrite → 执行 (或直接执行)
-```
-
----
-
-### 7. 技术方案选择原则 (Technical Solution Selection)
-
-#### 🎯 核心理念：通用化 > 特化处理
-
-**基本原则**:
-- ❌ **禁止 Case-to-Case 处理**: 避免为每个具体场景创建特殊情况逻辑
-- ✅ **优先通用方案**: 选择可扩展、可复用、可维护的通用解决方案
-- ✅ **抽象优先**: 使用抽象层、配置、策略模式等技术消除重复代码
-
-#### 7.1 方案评估维度
-
-在做出技术决策时，必须按优先级考虑以下维度：
-
-| 优先级 | 维度 | 说明 | 评估标准 |
-|--------|------|------|----------|
-| **P0** | **通用性** | 方案是否适用于多种场景 | 是否可复用？是否可扩展？ |
-| **P1** | **可维护性** | 代码是否易于理解和维护 | 是否清晰？是否易于修改？ |
-| **P2** | **可测试性** | 是否易于编写测试 | 测试覆盖率是否容易达到？ |
-| **P3** | **性能** | 执行效率是否满足要求 | 是否在性能预算内？ |
-| **P4** | **开发速度** | 实现速度 | 是否在合理时间内完成？ |
-
-> [!IMPORTANT]
-> **决策铁律**: 当通用性与开发速度冲突时，优先选择通用方案。
-> 理由：一次性投入通用方案，长期收益 > 短期快速实现的长期技术债。
-
-#### 7.2 通用方案识别方法
-
-**步骤1: 模式识别**
-```
-看到以下信号时，考虑通用方案：
-□ 出现多个 if-else 或 switch-case 处理不同场景
-□ 代码中出现 "特殊情况1"、"特殊情况2" 的注释
-□ 发现多个相似的函数/类，仅有细微差别
-□ 每次新需求都需要修改核心逻辑
-```
-
-**步骤2: 提取共性**
-```
-询问问题：
-1. 这些场景的共同点是什么？
-2. 差异点能否参数化？
-3. 能否用配置/策略/模板替代硬编码？
-```
-
-**步骤3: 应用模式**
-```
-常见通用化模式：
-┌─────────────────────────────────────────┐
-│ 模式              | 适用场景              │
-├─────────────────────────────────────────┤
-│ 策略模式          | 不同算法/行为可互换    │
-│ 工厂模式          | 对象创建逻辑复杂       │
-│ 模板方法          | 流程固定，步骤可变     │
-│ 责任链            | 多级处理/审批流程      │
-│ 配置驱动          | 行为可通过配置改变     │
-│ 插件化架构        | 需要动态扩展功能       │
-└─────────────────────────────────────────┘
-```
-
-#### 7.3 实践示例
-
-**❌ Case-to-Case 处理（禁止）**:
-```python
-# 糟糕的例子：为每个用户类型写特殊逻辑
-def process_user(user):
-    if user.type == "vip":
-        discount = 0.8
-        shipping = "free"
-    elif user.type == "regular":
-        discount = 1.0
-        shipping = "standard"
-    elif user.type == "new":
-        discount = 0.9
-        shipping = "standard"
-    # ... 每增加一个用户类型都要修改这里
-```
-
-**✅ 通用方案（推荐）**:
-```python
-# 好的例子：使用策略 + 配置
-class UserPolicy:
-    def __init__(self, config):
-        self.config = config
-
-    def get_discount(self, user):
-        return self.config[user.type]["discount"]
-
-    def get_shipping(self, user):
-        return self.config[user.type]["shipping"]
-
-# 配置可外部化，易于扩展
-USER_POLICIES = {
-    "vip": {"discount": 0.8, "shipping": "free"},
-    "regular": {"discount": 1.0, "shipping": "standard"},
-    "new": {"discount": 0.9, "shipping": "standard"}
+export default function Frontend() {
+  return <h1>Hello, world!</h1>;
 }
+
+root.render(<Frontend />);
 ```
 
-#### 7.4 强制检查清单
+Then, run index.ts
 
-在提交代码前，必须回答：
-```
-□ 这段代码是否处理了多个相似场景？
-  └─ 是 → 是否已抽象为通用方案？
-
-□ 是否存在 case-by-case 的条件分支？
-  └─ 是 → 能否用配置/策略/多态替代？
-
-□ 新增功能时是否需要修改已有代码？
-  └─ 是 → 是否考虑了开闭原则（对扩展开放，对修改封闭）？
-
-□ 这里的特化处理是否真的必要？
-  └─ 否 → 使用通用方案
-  └─ 是 → 在注释中说明为什么特化是必要的
+```sh
+bun --hot ./index.ts
 ```
 
-#### 7.5 禁止模式
+For more information, read the Bun API docs in `node_modules/bun-types/docs/**.md`.
 
-以下模式被明确禁止：
+## PS：
 
-| 禁止模式 | 原因 | 替代方案 |
-|----------|------|----------|
-| **长 if-elif-else 链** | 难以维护，违反开闭原则 | 策略模式、字典映射 |
-| **硬编码业务规则** | 无法配置，需改代码 | 配置文件、规则引擎 |
-| **为每个场景写独立函数** | 代码重复 | 参数化、模板方法 |
-| **在代码中嵌入版本判断** | 混乱，难以扩展 | 抽象层、适配器模式 |
-| **复制粘贴修改** | 维护噩梦 | 提取共性，复用 |
+- 改动之后记得测试
+- 测试的时候类型判断请用bunx，不要用其他方式
 
----
+## React 编码规范
 
-### 8. 测试要求规范 (Testing Requirements)
+编写 React 组件时，**禁止直接使用 useEffect**，使用以下替代模式：
 
-#### 🎯 核心理念：测试是代码的一部分，不是可选项
+### 规则 1：派生状态
+```tsx
+// ❌ 差
+const [filteredProducts, setFilteredProducts] = useState([]);
+useEffect(() => {
+  setFilteredProducts(products.filter((p) => p.inStock));
+}, [products]);
 
-**基本原则**:
-- ✅ **TDD/BDD 优先**: 先写测试，后写实现
-- ✅ **覆盖率要求**: 单元测试覆盖率 ≥ 80%
-- ✅ **分层测试**: 单元测试 + 集成测试，缺一不可
-- ✅ **自动化优先**: 所有测试必须可自动运行
-
-#### 8.1 测试分层
-
-```
-┌─────────────────────────────────────────┐
-│ 测试金字塔 (Testing Pyramid)             │
-├─────────────────────────────────────────┤
-│                    ▲                     │
-│                   /E\E\                  │
-│                  / E2E \                 │
-│                 /  测试  \                │
-│                /----------\              │
-│               / 集成测试  \              │
-│              /            \             │
-│             /--------------\            │
-│            /  单元测试      \           │
-│           /                \          │
-│          /------------------\         │
-│                                          │
-│  比例: 70% 单元 : 20% 集成 : 10% E2E     │
-└─────────────────────────────────────────┘
+// ✅ 好
+const filteredProducts = products.filter((p) => p.inStock);
 ```
 
-#### 8.2 单元测试要求 (Unit Testing)
+### 规则 2：使用数据获取库
+```tsx
+// ❌ 差
+useEffect(() => {
+  fetchProduct(productId).then(setProduct);
+}, [productId]);
 
-**定义**: 测试单个函数/类的行为，隔离外部依赖
-
-**必须满足**:
-- ✅ **快速执行**: 单个测试 < 100ms，整体套件 < 5min
-- ✅ **独立性**: 测试之间无依赖，可并行运行
-- ✅ **可重复**: 多次运行结果一致
-- ✅ **清晰命名**: 测试名描述场景和期望
-
-**命名规范**:
-```python
-# 格式: test_[被测函数]_[场景]_[期望结果]
-def test_calculate_discount_with_vip_user_returns_20_percent():
-    pass
-
-def test_login_with_invalid_credentials_raises_error():
-    pass
+// ✅ 好 - 使用 TanStack Query
+const { data: product } = useQuery(["product", productId], () => fetchProduct(productId));
 ```
 
-**覆盖率目标**:
-```
-核心业务逻辑:   ≥ 90%
-工具函数:       ≥ 80%
-配置/常量:      ≥ 60%
-整体平均:       ≥ 80%
-```
+### 规则 3：事件处理器
+```tsx
+// ❌ 差
+useEffect(() => {
+  if (liked) { postLike(); setLiked(false); }
+}, [liked]);
+<button onClick={() => setLiked(true)}>Like</button>
 
-**使用 AAA 模式**:
-```python
-def test_user_creation():
-    # Arrange (准备)
-    user_data = {"name": "Alice", "email": "alice@example.com"}
-
-    # Act (执行)
-    user = User.create(user_data)
-
-    # Assert (断言)
-    assert user.name == "Alice"
-    assert user.email == "alice@example.com"
+// ✅ 好
+<button onClick={() => postLike()}>Like</button>
 ```
 
-#### 8.3 集成测试要求 (Integration Testing)
+### 规则 4：useMountEffect（一次性外部同步）
+```tsx
+function useMountEffect(callback: () => void | (() => void)) {
+  useEffect(callback, []);
+}
 
-**定义**: 测试多个模块协作，验证集成场景
-
-**必须满足**:
-- ✅ **真实环境**: 使用测试数据库、测试服务
-- ✅ **端到端场景**: 覆盖关键业务流程
-- ✅ **外部依赖隔离**: Mock 外部 API，使用测试容器
-- ✅ **数据清理**: 每个测试前后清理状态
-
-**必测场景**:
-```
-□ 数据库 CRUD 操作
-□ API 端点请求/响应
-□ 消息队列生产/消费
-□ 缓存读写一致性
-□ 第三方服务集成（使用 Mock）
+// 适用场景：DOM 集成、第三方 widget、浏览器 API 订阅
 ```
 
-**示例**:
-```python
-def test_create_order_through_api():
-    # 准备测试数据
-    user = create_test_user()
-    product = create_test_product()
-
-    # 调用 API
-    response = client.post("/api/orders", json={
-        "user_id": user.id,
-        "product_id": product.id,
-        "quantity": 2
-    })
-
-    # 验证响应
-    assert response.status_code == 201
-    order = response.json()
-    assert order["total"] == product.price * 2
-
-    # 验证数据库状态
-    db_order = Order.get(order["id"])
-    assert db_order is not None
+### 规则 5：用 key 重置
+```tsx
+// 用 key 强制重置组件
+<VideoPlayer key={videoId} videoId={videoId} />
 ```
-
-#### 8.4 测试质量标准
-
-**好的测试**:
-- ✅ 清晰描述测试意图
-- ✅ 易于理解，无需调试
-- ✅ 测试失败时信息明确
-- ✅ 覆盖边界条件和异常情况
-- ✅ 执行快速
-
-**差的测试**:
-- ❌ 测试实现细节而非行为
-- ❌ 脆弱，频繁误报
-- ❌ 依赖执行顺序
-- ❌ 包含复杂逻辑
-- ❌ 只测试正常路径，不测异常
-
-#### 8.5 测试驱动开发 (TDD) 流程
-
-```
-┌─────────────────────────────────────────┐
-│ Red-Green-Refactor 循环                 │
-├─────────────────────────────────────────┤
-│ 1. 🔴 Red: 写一个失败的测试              │
-│    - 描述期望行为                       │
-│    - 运行测试确认失败                   │
-│                                         │
-│ 2. 🟢 Green: 写最少代码使测试通过        │
-│    - 不求完美，只求通过                 │
-│    - 运行测试确认通过                   │
-│                                         │
-│ 3. 🔵 Refactor: 重构优化代码            │
-│    - 改善代码质量                       │
-│    - 确保测试仍然通过                   │
-└─────────────────────────────────────────┘
-```
-
-#### 8.6 强制检查清单
-
-**提交代码前**:
-```
-□ 是否为新功能/修复添加了单元测试？
-  └─ 目标: 覆盖率 ≥ 80%
-
-□ 是否为集成场景添加了集成测试？
-  └─ 必测: API、数据库、关键业务流程
-
-□ 所有测试是否通过？
-  └─ 命令: npm test / pytest / go test
-
-□ 测试是否清晰且易于维护？
-  └─ 检查: 测试命名、断言清晰度
-
-□ 是否测试了边界条件和异常情况？
-  └─ 例如: 空值、零值、负数、非法输入
-```
-
-#### 8.7 测试工具推荐
-
-| 语言/框架 | 单元测试框架 | Mock 工具 | 覆盖率工具 |
-|-----------|--------------|-----------|------------|
-| **Python** | pytest | unittest.mock | pytest-cov |
-| **JavaScript/TS** | Jest/Vitest | sinon | istanbul |
-| **Go** | testing | gomock | go test -cover |
-| **Java** | JUnit 5 | Mockito | JaCoCo |
-| **Rust** | built-in | mockito | tarpaulin |
-
-#### 8.8 禁止行为
-
-```
-❌ 禁止:
-   - 跳过测试直接提交代码
-   - 为通过测试而修改测试逻辑
-   - 提交临时禁用的测试（skip/todo）
-   - 使用 @SuppressWarnings 忽略测试警告
-   - 将测试代码与生产代码混在一起
-   - 编写依赖执行顺序的测试
-```
-
----
-
-## 核心原则总结
-
-### 🎯 三大核心原则
-
-1. **文档优先** (Documentation First)
-   - START任务必须先创建文档
-   - 文档驱动所有执行
-
-2. **进度可追溯** (Traceable Progress)
-   - 所有进度在 schema/task_*.md
-   - 每一步都有记录
-
-3. **上下文刷新** (Context Refresh)
-   - 每次回复末尾重述
-   - 检查文档是否存在
-
-### ⚠️ 常见错误
-
-| 错误 | 症状 | 后果 | 纠正 |
-|------|------|------|------|
-| **跳过文档创建** | 收到START直接执行 | 违反协议 | 立即创建文档 |
-| **只用TodoWrite** | START后只用TodoWrite | 无文档记录 | 补创建文档 |
-| **文档不完整** | 目标/步骤不清晰 | 难以追踪 | 补充完整 |
-| **不更新进度** | 执行完不更新文档 | 进程丢失 | 及时更新 |
-
-### ✅ 正确流程速查
-
-```
-START: [任务]
-    ↓
-[强制] Write schema/task_xxx.md
-    ↓
-[推荐] TodoWrite
-    ↓
-[执行] 按步骤执行
-    ↓
-[每次] 更新文档进度
-    ↓
-[末尾] 重述状态
-    ↓
-[完成] DONE → 归档
-```
-
----
-
-## 附录: 快速参考
-
-### 任务文档模板
-
-```markdown
-# Task: [任务简述]
-
-**任务ID**: task_[简码]_[YYMMDD]_[HHMMSS]
-**创建时间**: YYYY-MM-DD
-**状态**: 进行中
-
-## 最终目标
-[一句话目标]
-
-## 拆解步骤
-1. [步骤1]
-   - [ ] 1.1
-   - [ ] 1.2
-2. [步骤2]
-   - [ ] 2.1
-
-## 当前进度
-### 正在进行
-[当前步骤描述]
-
-## 下一步
-1. [具体下一步]
-```
-
-### 末尾重述模板
-
-```text
-[项目全局状态]: 已同步至 production.md
-[当前任务文件]: <文件名>
-[当前目标]: <一句话目标>
-[已完成]: <最近一步>
-[下一步]: <下一步>
-```
-
----
-
-## 版本历史
-
-- **v1.0** (2025-01-01): 初始版本
-- **v2.0** (2026-01-02):
-  - 新增：强制文档创建要求
-  - 新增：错误恢复机制
-  - 新增：TodoWrite使用规范
-  - 新增：验证检查机制
-  - 改进：流程对比示例
-- **v3.0** (2026-02-06):
-  - 新增：技术方案选择原则（7节）
-    - 强调通用化方案，避免 case-to-case 处理
-    - 添加方案评估维度（通用性优先）
-    - 提供通用方案识别方法和实践示例
-    - 明确禁止模式
-  - 新增：测试要求规范（8节）
-    - 定义测试分层（单元测试 + 集成测试）
-    - 明确覆盖率目标（≥80%）
-    - 添加 TDD 流程指南
-    - 提供测试质量标准和工具推荐
-  - 改进：整体协议从任务管理扩展到技术决策和代码质量
-
----
-
-**协议维护**: 本协议是核心操作逻辑，旨在通过"物理文件记录"和"末尾重述机制"对抗长上下文带来的注意力衰减。
-
-**核心信念**: 先文档，后执行，永远可追溯！
