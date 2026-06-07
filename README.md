@@ -1,5 +1,664 @@
 # Krebs
 
+[English](#english) | [中文](#中文)
+
+---
+
+## English
+
+### AI Coding Assistant based on `@mariozechner/pi-coding-agent` with Web UI and Interactive Chat
+
+## Features
+
+- 🤖 **Smart Code Generation** - Supports DeepSeek and Claude models
+- 📝 **File Operations** - Safe file read/write, all files written to `custom/` directory
+- 🔧 **Bash Execution** - Execute shell commands in isolated environment
+- 🔍 **Web Search** - Integrated web search capability
+- 💬 **Web UI** - Real-time chat interface with Markdown and code highlighting
+- 📊 **Streaming Display** - Real-time file write progress and content display
+- 🐛 **Debug Mode** - Optional event logging feature
+
+## Quick Start
+
+```bash
+# Install dependencies
+bun install
+
+# Configure API Key (choose one)
+export DEEPSEEK_API_KEY=your_key_here    # Recommended, cost-effective
+# or
+export ANTHROPIC_API_KEY=your_key_here
+
+# Start server
+bun run server.ts
+
+# Open Web UI
+open http://localhost:3000
+```
+
+## Environment Configuration
+
+Create a `.env` file:
+
+```bash
+# API Key (required)
+DEEPSEEK_API_KEY=your_deepseek_key
+# or
+ANTHROPIC_API_KEY=your_anthropic_key
+
+# Server port (optional, default 3000)
+PORT=3000
+
+# Log level (optional)
+LOG_LEVEL=NORMAL    # Output to console only
+LOG_LEVEL=DEBUG     # Output to console and write to monitor.log
+```
+
+## Features Demo
+
+### 1. Code Generation
+
+```
+User: Write a Python quicksort for me
+
+AI: I'll write a Python version of the quicksort algorithm for you.
+
+📝 Preparing to write file...
+📝 Generating file: custom/quick_sort.py...
+📝 Writing file: custom/quick_sort.py
+
+📄 Content:
+def quick_sort(arr):
+    """
+    Quicksort algorithm
+    ...
+
+✅ Write complete!
+📁 File: custom/quick_sort.py
+📊 Size: 1234 bytes
+```
+
+### 2. Code Execution
+
+```
+User: Run this quicksort
+
+AI: Sure, let me run this quicksort program to test it.
+
+🔧 Executing tool: bash
+📝 Args: {"command":"python custom/quick_sort.py"}
+
+Testing quicksort algorithm
+==================================================
+Test case 1: [64, 34, 25, 12, 22, 11, 90]
+  Quicksort (new list): [11, 12, 22, 25, 34, 64, 90]
+  ✓ Sort correct
+...
+```
+
+### 3. File Reading
+
+```
+User: View the content of quick_sort.py
+
+AI: Sure, let me read the content of this file.
+
+📄 File content:
+def quick_sort(arr):
+    ...
+```
+
+## Project Structure
+
+```
+Krebs/
+├── server.ts           # WebSocket server and Agent session management
+├── index.ts            # HTTP server and static file serving
+├── frontend/           # Web UI frontend
+│   ├── chat.html       # HTML and CSS styles
+│   └── chat.tsx        # React components and WebSocket client
+├── lib/                # Utilities
+│   └── logger.ts       # Logging utility (supports NORMAL/DEBUG mode)
+├── custom/             # Agent working directory (all files written here)
+├── docs/               # Documentation
+│   ├── architecture-overview.md    # Architecture overview
+│   ├── write-tool-loading-debug.md # Write Tool Loading troubleshooting
+│   ├── write-tool-streaming-display.md # Streaming content display optimization
+│   └── pi-mono-tool-monitoring.md  # pi-mono tool monitoring mechanism
+└── schema/             # Data model definitions
+```
+
+## Tools
+
+| Tool | Function | Example |
+|------|----------|---------|
+| `read` | Read file | `Read the content of custom/app.py` |
+| `write` | Write file | `Create a hello.py file` |
+| `bash` | Execute command | `Run python hello.py` |
+| `web_search` | Web search | `Search latest TypeScript features` |
+
+## How It Works
+
+### Tool Calling Flow
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         Tool Calling Flow                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  1. User Input                                                   │
+│     "Create a TypeScript file for me"                           │
+│            ↓                                                     │
+│  2. LLM Analyzes Request                                         │
+│     Understanding: need to create file → choose write tool      │
+│            ↓                                                     │
+│  3. Tool Call Generation (toolcall_delta)                        │
+│     Incremental transfer: path, content, etc.                    │
+│            ↓                                                     │
+│  4. Tool Execution (tool_execution_start)                        │
+│     writeTool.execute(params) → 2ms complete                    │
+│            ↓                                                     │
+│  5. Return Result (tool_execution_end)                          │
+│     { success: true, bytes: 1234 }                              │
+│            ↓                                                     │
+│  6. LLM Continues Based on Result                                │
+│     "File created successfully, contains the following..."       │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### ReAct Loop Pattern
+
+Agent uses ReAct (Reasoning + Acting) pattern:
+
+1. **Reason** - LLM analyzes current state, decides next action
+2. **Act** - Execute tool call
+3. **Observe** - Observe tool execution result
+4. **Loop** - Repeat until task is complete
+
+### Event Flow
+
+```
+toolcall_start      → LLM starts generating tool call
+  ↓
+toolcall_delta      → Incremental parameter transfer (real-time progress)
+  ↓
+toolcall_end        → LLM completes tool call generation
+  ↓
+tool_execution_start → Tool starts execution (2-4ms)
+  ↓
+tool_execution_end   → Tool execution complete
+```
+
+## Development
+
+### Adding a New Tool
+
+```typescript
+import { Type } from "@sinclair/typebox";
+
+const myTool: ToolDefinition = {
+  name: "my_tool",
+  label: "My Tool",
+  description: "Tool description",
+  parameters: Type.Object({
+    param1: Type.String({ description: "Parameter description" }),
+  }),
+  execute: async (_toolCallId, params, _signal, _onUpdate, _ctx) => {
+    // Tool execution logic
+    return {
+      content: [{ type: "text", text: "Execution result" }],
+      details: {},
+    };
+  },
+};
+
+// Register in createAgentSession
+tools: [
+  createReadTool(cwd),
+  createBashTool(join(cwd, "custom")),
+  createWriteTool(join(cwd, "custom")),
+  myTool,  // Add new tool here
+],
+```
+
+### Debug Logging
+
+```bash
+# Enable DEBUG mode
+echo "LOG_LEVEL=DEBUG" > .env
+
+# Restart server
+bun run server.ts
+
+# View logs
+tail -f monitor.log
+```
+
+## Tech Stack
+
+- **Backend**: Bun + TypeScript
+- **Frontend**: Preact + Markdown + Highlight.js
+- **AI**: `@mariozechner/pi-coding-agent`
+- **Communication**: WebSocket
+- **Styling**: Custom CSS (dark theme)
+
+## External API Guide
+
+Krebs provides HTTP API and WebSocket interfaces for external applications.
+
+### Authentication
+
+#### Method A: Authorization Header (Recommended)
+
+```bash
+curl http://localhost:3000/api/sessions/list \
+  -H "Authorization: Bearer YOUR_TOKEN_HERE"
+```
+
+#### Method B: Cookie
+
+```bash
+# Step 1: Authenticate to get Cookie
+curl -X POST http://localhost:3000/api/auth \
+  -H "Content-Type: application/json" \
+  -d '{"token": "YOUR_TOKEN_HERE"}' \
+  -c cookies.txt
+
+# Step 2: Use Cookie to call API
+curl http://localhost:3000/api/sessions/list -b cookies.txt
+```
+
+### HTTP API Endpoints
+
+#### 1. Send Message (Chat)
+
+**POST** `/api/messages`
+
+Send a message and get AI response:
+
+```bash
+curl -X POST http://localhost:3000/api/messages \
+  -H "Authorization: Bearer YOUR_TOKEN_HERE" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "Hello, please introduce yourself"
+  }'
+```
+
+**Response:**
+```json
+{
+  "sessionId": "session_abc123",
+  "response": "Hello! I am an AI assistant..."
+}
+```
+
+#### 2. Continue Conversation (Keep Context)
+
+**POST** `/api/messages`
+
+Use `sessionId` to continue previous conversation:
+
+```bash
+curl -X POST http://localhost:3000/api/messages \
+  -H "Authorization: Bearer YOUR_TOKEN_HERE" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "What did I ask you just now?",
+    "sessionId": "session_abc123"
+  }'
+```
+
+#### 3. Get All Sessions List
+
+**GET** `/api/sessions/list`
+
+```bash
+curl http://localhost:3000/api/sessions/list \
+  -H "Authorization: Bearer YOUR_TOKEN_HERE"
+```
+
+**Response:**
+```json
+{
+  "sessions": [
+    {
+      "id": "session_abc123",
+      "session_id": "session_abc123",
+      "first_question": "Hello, please introduce yourself",
+      "created_at": 1712000000000
+    }
+  ]
+}
+```
+
+#### 4. Get Session History Messages
+
+**GET** `/api/sessions/:sessionId`
+
+```bash
+curl http://localhost:3000/api/sessions/session_abc123 \
+  -H "Authorization: Bearer YOUR_TOKEN_HERE"
+```
+
+**Response:**
+```json
+{
+  "sessionId": "session_abc123",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hello, please introduce yourself"
+    },
+    {
+      "role": "assistant",
+      "content": "Hello! I am an AI assistant..."
+    }
+  ]
+}
+```
+
+#### 5. Delete Session
+
+**DELETE** `/api/sessions/:sessionId`
+
+```bash
+curl -X DELETE http://localhost:3000/api/sessions/session_abc123 \
+  -H "Authorization: Bearer YOUR_TOKEN_HERE"
+```
+
+#### 6. Health Check
+
+**GET** `/health`
+
+```bash
+curl http://localhost:3000/health
+```
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "sessions": 5
+}
+```
+
+### WebSocket Real-time Communication
+
+WebSocket supports real-time streaming responses, suitable for scenarios requiring immediate feedback.
+
+#### Connection and Authentication
+
+```javascript
+const ws = new WebSocket("ws://localhost:3000/ws");
+
+ws.onopen = () => {
+  // Send auth message after connection established
+  ws.send(JSON.stringify({ type: "auth" }));
+};
+
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+
+  if (data.type === "auth_success") {
+    console.log("Auth success");
+    // Now you can send messages
+  }
+};
+```
+
+#### Send Message
+
+```javascript
+ws.send(JSON.stringify({
+  type: "prompt",
+  message: "Write a quicksort in Python"
+}));
+```
+
+#### Receive Streaming Response
+
+```javascript
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+
+  switch (data.type) {
+    case "text_delta":
+      // Receive text increment
+      console.log(data.delta);
+      break;
+
+    case "tool_call_start":
+      // AI starts calling tool
+      console.log(`Calling tool: ${data.tool}`);
+      break;
+
+    case "tool_call_delta":
+      // Tool call incremental update (e.g., file write progress)
+      if (data.tool === "write") {
+        console.log(`Writing file: ${data.path}`);
+      }
+      break;
+
+    case "tool_end":
+      // Tool call complete
+      console.log(`Tool execution complete: ${data.success ? "success" : "failed"}`);
+      break;
+
+    case "response_end":
+      // Full response end
+      console.log("Conversation complete");
+      break;
+
+    case "error":
+      console.error("Error:", data.message);
+      break;
+  }
+};
+```
+
+#### Stop Generation
+
+```javascript
+ws.send(JSON.stringify({ type: "stop" }));
+```
+
+### Complete Example Code
+
+#### Python Example
+
+```python
+import requests
+
+TOKEN = "your_token_here"
+BASE_URL = "http://localhost:3000"
+
+headers = {
+    "Authorization": f"Bearer {TOKEN}",
+    "Content-Type": "application/json"
+}
+
+# Send message
+response = requests.post(
+    f"{BASE_URL}/api/messages",
+    headers=headers,
+    json={"message": "What is recursion?"}
+)
+
+data = response.json()
+print(f"Session ID: {data['sessionId']}")
+print(f"Response: {data['response']}")
+
+# Continue conversation
+response2 = requests.post(
+    f"{BASE_URL}/api/messages",
+    headers=headers,
+    json={
+        "message": "Can you give me an example?",
+        "sessionId": data['sessionId']
+    }
+)
+
+print(f"Response 2: {response2.json()['response']}")
+```
+
+#### JavaScript/Node.js Example
+
+```javascript
+const TOKEN = "your_token_here";
+const BASE_URL = "http://localhost:3000";
+
+async function chat(message, sessionId = null) {
+  const response = await fetch(`${BASE_URL}/api/messages`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      message,
+      sessionId
+    }),
+  });
+
+  const data = await response.json();
+  return data;
+}
+
+// Usage example
+chat("Write a quicksort algorithm for me")
+  .then(result => {
+    console.log("Session:", result.sessionId);
+    console.log("Response:", result.response);
+
+    // Continue conversation
+    return chat("What is the time complexity of this code?", result.sessionId);
+  })
+  .then(result2 => {
+    console.log("Response 2:", result2.response);
+  });
+```
+
+#### WebSocket Complete Example
+
+```javascript
+class KrebsClient {
+  constructor(url, token) {
+    this.url = url;
+    this.token = token;
+    this.ws = null;
+    this.messageHandlers = [];
+  }
+
+  connect() {
+    return new Promise((resolve, reject) => {
+      this.ws = new WebSocket(this.url);
+
+      this.ws.onopen = () => {
+        // Send auth
+        this.ws.send(JSON.stringify({ type: "auth" }));
+      };
+
+      this.ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+
+        if (data.type === "auth_success") {
+          resolve();
+        } else {
+          // Trigger message handlers
+          this.messageHandlers.forEach(handler => handler(data));
+        }
+      };
+
+      this.ws.onerror = (error) => reject(error);
+    });
+  }
+
+  onMessage(handler) {
+    this.messageHandlers.push(handler);
+  }
+
+  sendMessage(message) {
+    this.ws.send(JSON.stringify({
+      type: "prompt",
+      message
+    }));
+  }
+
+  stop() {
+    this.ws.send(JSON.stringify({ type: "stop" }));
+  }
+
+  disconnect() {
+    this.ws.close();
+  }
+}
+
+// Usage example
+const client = new KrebsClient("ws://localhost:3000/ws", "your_token");
+
+await client.connect();
+
+client.onMessage((data) => {
+  if (data.type === "text_delta") {
+    process.stdout.write(data.delta);
+  }
+});
+
+client.sendMessage("Introduce Python to me");
+```
+
+### Error Handling
+
+#### HTTP Status Codes
+
+- **200** - Request successful
+- **400** - Invalid request parameters
+- **401** - Unauthorized (Token invalid or missing)
+- **404** - Resource not found (e.g., session not found)
+- **500** - Internal server error
+
+#### Error Response Format
+
+```json
+{
+  "error": "Error description"
+}
+```
+
+### Security Recommendations
+
+1. **Use HTTPS in Production**
+   - Set `NODE_ENV=production` environment variable
+   - Cookies will automatically add `Secure` flag
+
+2. **Regularly Rotate Tokens**
+   - Modify `TOKEN` value in `.env` file
+   - Restart server
+
+3. **Restrict Access Sources**
+   - Use firewall to restrict IP access
+   - Only allow trusted networks to access
+
+For detailed security documentation, see [SECURITY.md](./SECURITY.md) and [docs/AUTHENTICATION.md](./docs/AUTHENTICATION.md).
+
+## References
+
+- [pi-mono GitHub](https://github.com/badlogic/pi-mono)
+- [pi-coding-agent Documentation](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent)
+- [Anthropic Tool Use](https://docs.anthropic.com/claude/docs/tool-use)
+- [Project Documentation](./docs/)
+- [Authentication Details](./docs/AUTHENTICATION.md)
+
+## License
+
+MIT
+
+---
+
+## 中文
+
 基于 `@mariozechner/pi-coding-agent` 的 AI 编程助手，支持 Web UI 和交互式聊天。
 
 ## 特性
@@ -247,7 +906,7 @@ Krebs 提供了 HTTP API 和 WebSocket 接口，支持外部应用调用。
 
 ```bash
 curl http://localhost:3000/api/sessions/list \
-  -H "Authorization: Bearer YOUR_TOKEN_HERE_HERE"
+  -H "Authorization: Bearer YOUR_TOKEN_HERE"
 ```
 
 #### 方式 B：Cookie
@@ -256,7 +915,7 @@ curl http://localhost:3000/api/sessions/list \
 # 步骤 1：认证获取 Cookie
 curl -X POST http://localhost:3000/api/auth \
   -H "Content-Type: application/json" \
-  -d '{"token": "YOUR_TOKEN_HERE_HERE"}' \
+  -d '{"token": "YOUR_TOKEN_HERE"}' \
   -c cookies.txt
 
 # 步骤 2：使用 Cookie 调用 API

@@ -25,6 +25,10 @@ import { existsSync, readFileSync } from "fs";
 import { TOOLS } from "../tools/index.js";
 import { SKILLS } from "../skills/index.js";
 import { systemPrompt } from "../prompts/index.js";
+import {
+  extractFromSessionFile,
+  extractFromTurnEvent,
+} from "../lib/session-transcript.js";
 
 // ==================== 模型配置 ====================
 export const MODEL_CONFIG = {
@@ -248,62 +252,18 @@ async function waitForSessionComplete(
   });
 }
 
-/**
- * 从 Session 文件中读取最后一条 assistant 消息的完整文本
- */
-async function getLastAssistantMessageFromFile(
-  sessionFilePath: string,
-  logger?: { log: (msg: string) => void },
-): Promise<any[]> {
-  try {
-    const file = Bun.file(sessionFilePath);
-    const fileContent = await file.text();
-    const lines = fileContent.split("\n").filter(Boolean);
-
-    const messages: any[] = [];
-    for (const line of lines) {
-      try {
-        if (!line) continue;
-        const data = JSON.parse(line);
-        if (data.type === "message" && data.message?.role === "assistant") {
-          messages.push(data.message);
-        }
-      } catch (e) {}
-    }
-
-    const lastMessage = messages[messages.length - 1];
-    logger?.log(
-      `[SESSION] 从文件读取 ${messages.length} 条 assistant 消息`,
-    );
-    return messages;
-  } catch (e) {
-    logger?.log(`[SESSION] 读取文件失败: ${e}`);
-    return [];
-  }
-}
-
-/**
- * 从 turn_end 事件的 message 中提取完整文本内容（基于内存，无文件 I/O）
- */
-function extractCompleteContent(message: any): string {
-  try {
-    const textParts =
-      message?.content
-        ?.filter((c: any) => c.type === "text" || c.type === "thinking")
-        .map((c: any) => (c.type === "thinking" ? c.thinking : c.text)) || [];
-    return textParts.join("");
-  } catch (e) {
-    return "";
-  }
-}
-
+// 导出本地定义的函数
 export {
   createRuntime,
   getSession,
   deleteSession,
   generateSessionId,
   waitForSessionComplete,
-  getLastAssistantMessageFromFile,
-  extractCompleteContent,
   sessions,
 };
+
+// Re-export from unified transcript module for backward compatibility
+export {
+  extractFromSessionFile as getLastAssistantMessageFromFile,
+  extractFromTurnEvent as extractCompleteContent,
+} from "../lib/session-transcript.js";

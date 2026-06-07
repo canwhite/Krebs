@@ -1,11 +1,12 @@
 import { MonitorLogger } from "../../lib/logger.js";
-import { extractFromSessionText } from "../../lib/session-content-extractor.js";
+import {
+  extractWithFallback,
+} from "../../lib/session-transcript.js";
 import {
   getSession,
   generateSessionId,
   createRuntime,
   waitForSessionComplete,
-  getLastAssistantMessageFromFile,
   deleteSession,
 } from "../session-service.js";
 import { saveSessionMeta } from "../../db/index.js";
@@ -13,7 +14,7 @@ import { corsHeaders } from "./index.js";
 
 async function handleApiMessage(req: Request): Promise<Response> {
   const startTime = Date.now();
-  const logger = MonitorLogger.getInstance();
+  const logger = MonitorLogger.createInstance("http");
   let sessionId: string | undefined;
   let usedSessionId: string | undefined;
 
@@ -90,7 +91,6 @@ async function handleApiMessage(req: Request): Promise<Response> {
     const lastMessage = assistantMessages[assistantMessages.length - 1];
 
     let fullTextResponse = "";
-    let generatedContent: string | undefined = "";
 
     if (lastMessage?.content) {
       const textParts =
@@ -100,16 +100,12 @@ async function handleApiMessage(req: Request): Promise<Response> {
       fullTextResponse = textParts.join("");
     }
 
-    generatedContent = extractFromSessionText(sessionMessages, logger);
-
-    // 如果事件中没有内容，尝试从文件读取（后备方案）
-    if ((!generatedContent || generatedContent === "") && sessionFilePath) {
-      const fileMessages = await getLastAssistantMessageFromFile(
-        sessionFilePath,
-        logger,
-      );
-      generatedContent = extractFromSessionText(fileMessages, logger);
-    }
+    // 使用统一的提取函数（带后备方案）
+    const generatedContent = await extractWithFallback(
+      sessionMessages,
+      sessionFilePath,
+      logger,
+    );
 
     logger.log(
       `[HTTP OUT] Status: 200 | SessionID: ${usedSessionId} | ResponseLength: ${fullTextResponse.length} | HasGeneratedContent: ${!!generatedContent} | Duration: ${Date.now() - startTime}ms`,

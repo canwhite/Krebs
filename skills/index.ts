@@ -4,7 +4,12 @@
  * 集中管理所有可用的 skills，便于维护和扩展
  */
 
-const SKILLS_BASE_DIR = "/Users/zack/Desktop/Krebs/skills";
+import { dirname } from "path";
+import { fileURLToPath } from "url";
+
+// 动态计算 skills 目录的绝对路径
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const SKILLS_BASE_DIR = __dirname;
 
 export interface SkillConfig {
   name: string;

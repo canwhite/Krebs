@@ -235,12 +235,12 @@ export function subscribeToSessionEvents(
       } else {
         void (async () => {
           const fullTextResponse =
-            await getLastAssistantMessageFromFile(
+            await extractFromSessionFile(
               sessionFilePath,
               logger,
             );
           const generatedContent =
-            extractFromSessionText(fullTextResponse);
+            extractFromMessages(fullTextResponse);
           ws.send(
             JSON.stringify({
               type: "response_end",

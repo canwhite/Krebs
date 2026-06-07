@@ -19,40 +19,43 @@ function getLogLevel(): LogLevel {
 }
 
 /**
- * 日志工具类（单例模式）
+ * Logger 接口
  */
-class MonitorLogger {
-  private static instance: MonitorLogger | null = null;
+export interface Logger {
+  log(message: string): void;
+  close(): void;
+  isDebugEnabled(): boolean;
+}
+
+/**
+ * 日志工具类
+ * 每次创建都是新实例，无单例模式
+ */
+class MonitorLogger implements Logger {
   private logStream: any = null;
   private isEnabled: boolean = false;
+  private name: string;
 
-  private constructor() {
+  private constructor(name?: string) {
     const logLevel = getLogLevel();
     this.isEnabled = logLevel === "DEBUG";
+    this.name = name || "default";
 
     if (this.isEnabled) {
       const fs = require("fs");
       this.logStream = fs.createWriteStream("./monitor.log", { flags: "a" });
-      console.log("[MONITOR] Logger initialized with DEBUG level");
+      if (this.name === "default") {
+        console.log("[MONITOR] Logger initialized with DEBUG level");
+      }
     }
   }
 
   /**
-   * 获取单例实例
+   * 创建新的日志实例
+   * @param name 可选的实例名称，用于区分不同连接/请求的日志
    */
-  public static getInstance(): MonitorLogger {
-    if (!MonitorLogger.instance) {
-      MonitorLogger.instance = new MonitorLogger();
-    }
-    return MonitorLogger.instance;
-  }
-
-  /**
-   * 创建新的日志实例（用于多连接场景）
-   * 每个实例独立管理自己的日志流
-   */
-  public static createInstance(): MonitorLogger {
-    return new MonitorLogger();
+  public static createInstance(name?: string): MonitorLogger {
+    return new MonitorLogger(name);
   }
 
   /**
@@ -60,7 +63,7 @@ class MonitorLogger {
    */
   public log(message: string): void {
     const timestamp = new Date().toISOString();
-    const logMessage = `[${timestamp}] ${message}`;
+    const logMessage = `[${timestamp}] [${this.name}] ${message}`;
 
     // 始终输出到控制台
     console.log(logMessage);
@@ -76,7 +79,7 @@ class MonitorLogger {
    */
   public close(): void {
     if (this.isEnabled && this.logStream) {
-      this.logStream.write(`[${new Date().toISOString()}] [MONITOR] Logger closed\n`);
+      this.logStream.write(`[${new Date().toISOString()}] [${this.name}] Logger closed\n`);
       this.logStream.end();
       this.logStream = null;
     }
@@ -91,7 +94,7 @@ class MonitorLogger {
 }
 
 /**
- * 导出单例实例和类
+ * 导出类和接口
  */
 export { MonitorLogger };
-export const logger = MonitorLogger.getInstance();
+export type { Logger };

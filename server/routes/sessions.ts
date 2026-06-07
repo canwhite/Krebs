@@ -65,7 +65,7 @@ async function getSessionMessages(id: string) {
 }
 
 async function handleCreateSession(): Promise<Response> {
-  const logger = MonitorLogger.getInstance();
+  const logger = MonitorLogger.createInstance("http");
   const startTime = Date.now();
   const sessionId = generateSessionId();
   await createRuntime(sessionId);
@@ -79,7 +79,7 @@ async function handleCreateSession(): Promise<Response> {
 }
 
 function handleDeleteSession(sessionId: string): Response {
-  const logger = MonitorLogger.getInstance();
+  const logger = MonitorLogger.createInstance("http");
   logger.log(`[HTTP IN] Method: DELETE | Path: /api/sessions/${sessionId}`);
 
   // Get session metadata to find file path
