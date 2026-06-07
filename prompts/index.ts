@@ -1,4 +1,4 @@
-export const systemPrompt = `你是一个专业的编程助手，也是智能任务调度中心。
+export const systemPrompt = `你是一个的多功能助手，也是智能任务调度中心。
 
 == 核心能力 ==
 - 基础工具: 执行 shell、读写文件、编辑、网络搜索、获取时间

@@ -1,10 +1,8 @@
 /// <reference types="bun-types" />
 import { MonitorLogger } from "../lib/logger.js";
-import { extractFromSessionText } from "../lib/session-content-extractor.js";
 import {
   saveSessionMeta,
   getAllSessions,
-  getSessionById,
 } from "../db/index.js";
 import {
   createRuntime,
@@ -25,6 +23,13 @@ import {
   getSessionMessages,
 } from "./routes/sessions.js";
 import { handleInternalAuth, handleExternalAuth } from "./routes/auth.js";
+import { createWsRouter, type WsRouter } from "./ws-router.js";
+import {
+  createAuthHandler,
+  createStopHandler,
+  createSwitchSessionHandler,
+  createPromptHandler,
+} from "./handlers/index.js";
 
 // ==================== Init ====================
 if (!MODEL_CONFIG.apiKey) {
@@ -194,10 +199,20 @@ const server = Bun.serve({
 
       // Create logger instance
       const logger = MonitorLogger.createInstance();
+
+      // 创建路由器（每个连接一个实例）
+      const router: WsRouter = createWsRouter({
+        authHandler: createAuthHandler(),
+        stopHandler: createStopHandler(),
+        switchSessionHandler: createSwitchSessionHandler(),
+        promptHandler: createPromptHandler(),
+      });
+
       (ws as any).data = {
         sessionId,
         logger,
         authenticated: false,
+        router,
       };
 
       logger.log(`[SESSION] Session ${sessionId} started, WebSocket opened`);
@@ -253,24 +268,16 @@ const server = Bun.serve({
           ws.close(1011, "Session creation failed");
         });
     },
-    async message(ws: any, message: any) {
-      try {
-        const data = JSON.parse(message.toString()) as {
-          type?: string;
-          message?: string;
-          sessionId?: string;
-          token?: string;
-        };
+    message(ws: any, message: any) {
+      const router: WsRouter = (ws as any).data?.router;
+      if (!router) {
+        ws.send(JSON.stringify({ type: "error", message: "Router 未初始化" }));
+        return;
+      }
 
-        // 认证消息处理（本地前端直接信任）
-        if (data.type === "auth") {
-          (ws as any).data.authenticated = true;
-          console.log("[WebSocket] 认证成功（本地前端）");
-          ws.send(JSON.stringify({ type: "auth_success" }));
-          return;
-        }
-
-        // 其他消息需要先认证
+      // 认证检查（auth 消息在路由器内部处理）
+      const data = JSON.parse(message.toString()) as { type?: string };
+      if (data.type !== "auth") {
         if (!(ws as any).data?.authenticated) {
           ws.send(
             JSON.stringify({
@@ -282,9 +289,9 @@ const server = Bun.serve({
           return;
         }
 
+        // 检查 session 是否存在
         const sessionId = (ws as any).data?.sessionId;
         const runtime = getSession(sessionId!);
-
         if (!runtime) {
           ws.send(
             JSON.stringify({
@@ -294,190 +301,10 @@ const server = Bun.serve({
           );
           return;
         }
-
-        const session = runtime.session;
-
-        if (data.type === "stop") {
-          console.log(`[WebSocket] 收到停止请求`);
-          if (session.isStreaming) {
-            await session.abort();
-            console.log(`[WebSocket] 已停止 AI 回复`);
-          }
-          return;
-        }
-
-        if (data.type === "switch_session" && data.sessionId) {
-          if ((ws as any).data.isSwitchingSession) {
-            ws.send(
-              JSON.stringify({
-                type: "error",
-                message: "Session 切换中，请稍后",
-              }),
-            );
-            return;
-          }
-
-          console.log(`[WebSocket] 切换 session 到: ${data.sessionId}`);
-
-          const sessionMeta = getSessionById(data.sessionId);
-          if (!sessionMeta || !sessionMeta.file_path) {
-            ws.send(
-              JSON.stringify({
-                type: "error",
-                message: "Session 不存在或文件路径无效",
-              }),
-            );
-            return;
-          }
-
-          (ws as any).data.isSwitchingSession = true;
-
-          try {
-            const runtime = (ws as any).data.runtime as any;
-            if (!runtime) {
-              throw new Error("Runtime 不存在");
-            }
-
-            // 取消旧的事件订阅
-            const oldUnsubscribe = (ws as any).data.unsubscribe;
-            if (oldUnsubscribe) {
-              try {
-                oldUnsubscribe();
-                console.log(`[WebSocket] 已取消旧 session 的事件订阅`);
-              } catch (e) {
-                console.error(`[WebSocket] 取消旧订阅失败:`, e);
-              }
-            }
-
-            const result = await runtime.switchSession(sessionMeta.file_path);
-            if (!result.cancelled) {
-              // 更新 session 引用
-              const newSession = runtime.session;
-
-              // 使用共享的事件订阅工厂
-              const unsubscribe = subscribeToSessionEvents(
-                ws,
-                newSession,
-                (ws as any).data.logger,
-              );
-              (ws as any).data.unsubscribe = unsubscribe;
-
-              // P1-1 修复: 检查目标 sessionId 是否已存在，清理旧 runtime
-              const existingRuntime = sessions.get(data.sessionId);
-              if (existingRuntime && existingRuntime !== runtime) {
-                try {
-                  existingRuntime.dispose();
-                  console.log(
-                    `[WebSocket] 已清理被覆盖的 runtime: ${data.sessionId}`,
-                  );
-                } catch (e) {
-                  console.error(`[WebSocket] 清理旧 runtime 失败:`, e);
-                }
-              }
-
-              // Update sessions Map mapping
-              sessions.set(data.sessionId, runtime);
-
-              // Remove old sessionId mapping if different
-              if (sessionId && sessionId !== data.sessionId) {
-                sessions.delete(sessionId);
-              }
-
-              // Update the sessionId in ws.data
-              (ws as any).data.sessionId = data.sessionId;
-              (ws as any).data.firstMessageSaved = true;
-              (ws as any).data.session = newSession;
-
-              ws.send(
-                JSON.stringify({
-                  type: "session_switched",
-                  sessionId: data.sessionId,
-                }),
-              );
-              console.log(`[WebSocket] Session 切换成功: ${data.sessionId}`);
-            } else {
-              ws.send(
-                JSON.stringify({
-                  type: "error",
-                  message: "切换 session 被取消",
-                }),
-              );
-            }
-          } catch (error: any) {
-            console.error(`[WebSocket] 切换 session 出错:`, error);
-            ws.send(
-              JSON.stringify({
-                type: "error",
-                message: "切换 session 出错，请重试",
-              }),
-            );
-          } finally {
-            (ws as any).data.isSwitchingSession = false;
-          }
-        } else if (data.type === "prompt" && typeof data.message === "string") {
-          console.log(`[WebSocket] 收到消息: ${data.message}`);
-
-          const firstMessageSaved = (ws as any).data?.firstMessageSaved;
-          if (!firstMessageSaved) {
-            const filePath = session.sessionFile;
-
-            if (filePath) {
-              saveSessionMeta(sessionId!, data.message, filePath);
-              (ws as any).data.firstMessageSaved = true;
-            }
-          }
-
-          if (session.isStreaming) {
-            console.log(`[WebSocket] 会话正在响应中，将新消息加入队列`);
-
-            ws.send(
-              JSON.stringify({
-                type: "question_queued",
-                question: data.message,
-              }),
-            );
-
-            session.followUp(data.message).catch((error) => {
-              const errorMessage = error?.message || "未知错误";
-              const wsLogger = (ws as any).data?.logger;
-              if (wsLogger) {
-                wsLogger.log(`[ERROR] followUp 失败: ${errorMessage}`);
-              }
-              console.error(`[WebSocket] followUp 失败:`, error);
-
-              ws.send(
-                JSON.stringify({
-                  type: "error",
-                  message: "消息处理失败，请重试",
-                }),
-              );
-            });
-          } else {
-            session.prompt(data.message).catch((error) => {
-              const errorMessage = error?.message || "未知错误";
-              const wsLogger = (ws as any).data?.logger;
-              if (wsLogger) {
-                wsLogger.log(`[ERROR] prompt 失败: ${errorMessage}`);
-              }
-              console.error(`[WebSocket] prompt 失败:`, error);
-
-              ws.send(
-                JSON.stringify({
-                  type: "error",
-                  message: "消息处理失败，请重试",
-                }),
-              );
-            });
-          }
-        }
-      } catch (error: any) {
-        ws.send(
-          JSON.stringify({
-            type: "error",
-            message: `解析消息失败: ${error.message}`,
-          }),
-        );
       }
+
+      // 路由消息
+      router.handleMessage(ws, message);
     },
     close(ws: any) {
       const sessionId = (ws as any).data?.sessionId;

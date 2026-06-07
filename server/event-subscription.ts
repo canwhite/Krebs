@@ -1,7 +1,10 @@
 import type { AgentSession } from "@mariozechner/pi-coding-agent";
 import { parseThinkTagsFromDelta } from "./think-parser.js";
-import { extractCompleteContent, getLastAssistantMessageFromFile } from "./session-service.js";
-import { extractFromSessionText } from "../lib/session-content-extractor.js";
+import {
+  extractFromTurnEvent,
+  extractFromSessionFile,
+  extractFromMessages,
+} from "../lib/session-transcript.js";
 
 /**
  * Subscribe to session events and forward them to the WebSocket client.
@@ -206,7 +209,7 @@ export function subscribeToSessionEvents(
     // turn_end: 发送完整消息内容供前端重新渲染
     if (event.type === "turn_end") {
       logger.log("[SESSION] turn_end 收到，发送完整内容");
-      const completeContent = extractCompleteContent((event as any).message);
+      const completeContent = extractFromTurnEvent((event as any).message);
       ws.send(
         JSON.stringify({
           type: "turn_end",
