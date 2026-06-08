@@ -47,23 +47,3 @@ export function registerTool(definition: ToolDefinition): void {
   }
 }
 
-/**
- * 根据 name 获取 tool 配置
- */
-export function getToolByName(name: string): ToolConfig | undefined {
-  return TOOLS.find((t) => t.name === name);
-}
-
-/**
- * 获取所有 tool 名称
- */
-export function getToolNames(): string[] {
-  return TOOLS.map((t) => t.name);
-}
-
-/**
- * 获取所有 tool 对象数组（用于 customTools）
- */
-export function getToolObjects(): ToolDefinition[] {
-  return TOOLS.map((t) => t.tool);
-}
