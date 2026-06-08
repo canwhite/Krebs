@@ -3,19 +3,21 @@
 [English](#english) | [中文](#中文)
 
 ---
+
 ### AI Gateway — Chat UI + HTTP + WebSocket
 
-A self-hosted AI coding gateway. Connect from a browser, a script, or any HTTP client. Sessions persist across requests. All files land in `custom/`.
+A self-hosted AI coding gateway with an embedded **agent** at its core. The agent maintains session context, executes tools, and calls skills — Krebs just exposes it over HTTP and WebSocket.
 
 ## Features
 
-- **Browser UI** — Real-time chat with Markdown and code highlighting. No account, no external service.
+- **Embedded Agent** — Stateful coding agent with long-term memory across requests
+- **Browser UI** — Real-time chat, Markdown rendering, code highlighting. No account, no external service
 - **HTTP API** — One-shot `POST /api/messages` for CI/CD, scripts, other tools
 - **WebSocket API** — Stream tokens and tool events as they happen
 - **Persistent Sessions** — Resume any past conversation by `sessionId`
-- **Tool Execution** — AI can read, write, and run code in `custom/`
-- **Lua Tools** — Drop a `.lua` file in `lua-tools/`, it's immediately available to the AI
-- **Skills** — 7 built-in skills (web search, JSON validation, resume optimization, etc.)
+- **Tool Execution** — Agent reads, writes, and runs code in `custom/`
+- **Lua Tools** — Drop a `.lua` file in `lua-tools/`, the agent can call it immediately (9 built-in)
+- **Skills** — 7 built-in skills the agent reads in relevant contexts (web search, JSON validation, resume optimization, etc.)
 - **Multi-Model** — Switch between DeepSeek / Claude by setting one env var
 
 ## Quick Start
@@ -39,38 +41,87 @@ open http://localhost:3000
 | `MODEL_PROVIDER` | `deepseek` | `deepseek` or `anthropic` |
 | `MODEL_BASE_URL` | `https://api.deepseek.com/v1` | Custom model endpoint |
 | `MODEL_ID` | `deepseek-chat` | Model name |
-| `SESSION_TIMEOUT_MS` | `480000` | Max session run time (8 min) |
+| `SESSION_TIMEOUT_MS` | `480000` | Max agent run time (8 min) |
+
+## Architecture
+
+```
+                     Browser              HTTP Client             Script
+                          │                   │                    │
+                     ┌────▼────┐       ┌────▼────┐        ┌────▼────┐
+                     │   Web   │       │   HTTP  │        │   WS    │
+                     │   UI    │       │   API   │        │  Client │
+                     └────┬────┘       └────┬────┘        └────┬────┘
+                          │                 │                 │
+                          └─────────────────┼─────────────────┘
+                                            │
+                          ┌─────────────────▼─────────────────┐
+                          │            Krebs Gateway           │
+                          │                                      │
+                          │  ws-router        HTTP routes       │
+                          │  ├── AuthHandler   /api/messages     │
+                          │  ├── PromptHandler /api/sessions      │
+                          │  ├── StopHandler   /api/auth          │
+                          │  └── SwitchSession                   │
+                          └─────────────────┬───────────────────┘
+                                            │
+                          ┌─────────────────▼───────────────────┐
+                          │              Agent                   │
+                          │                                      │
+                          │  session-service                     │
+                          │    creates / manages runtime         │
+                          │                                      │
+                          │  event-subscription                   │
+                          │    forwards events → WS               │
+                          │                                      │
+                          │  think-parser                         │
+                          │    extracts <think> tags             │
+                          │                                      │
+                          │  tools/  +  lua-tools/  +  skills/  │
+                          │  bash     9 Lua scripts     7 skills  │
+                          └─────────────────┬───────────────────┘
+                                            │
+                          ┌─────────────────▼───────────────────┐
+                          │         SessionManager              │
+                          │  persists sessions → ./sessions/   │
+                          └───────────────────────────────────┘
+
+                          ┌───────────────────────────────────┐
+                          │     db/sessions_meta (SQLite)      │
+                          │  sessionId → sessionFile mapping    │
+                          └───────────────────────────────────┘
+```
 
 ## Project Structure
 
 ```
 Krebs/
-├── server/                    # Server
+├── server/                    # Krebs gateway
 │   ├── index.ts              # Bun.serve() — HTTP + WebSocket bootstrap
-│   ├── session-service.ts     # Runtime factory, session lifecycle
-│   ├── event-subscription.ts # Forwards AI events over WebSocket
+│   ├── session-service.ts     # Agent runtime factory + session lifecycle
+│   ├── event-subscription.ts # Forwards agent events over WebSocket
 │   ├── think-parser.ts        # Extract <think> tags from model output
 │   ├── ws-router.ts           # Route WS messages to handlers
-│   ├── handlers/              # WS message handlers (prompt, stop, auth, switch)
-│   └── routes/               # HTTP handlers (/api/messages, /api/sessions, ...)
+│   ├── handlers/              # Prompt / Stop / Auth / SwitchSession
+│   └── routes/               # /api/messages, /api/sessions, /api/auth
 │
-├── lib/                      # Shared
+├── lib/                      # Shared utilities
 │   ├── logger.ts             # NORMAL / DEBUG logging
 │   ├── session-repository.ts  # SessionRepository interface + in-memory impl
-│   └── session-transcript.ts  # Extract content from AI responses
+│   └── session-transcript.ts  # Extract content from agent responses
 │
 ├── tools/                    # Tool system
 │   ├── lua-runtime.ts        # Lua 5.4 VM (Wasmoon)
-│   ├── lua-tools-registry.ts # Auto-load *.lua files from lua-tools/
+│   ├── lua-tools-registry.ts # Auto-load *.lua from lua-tools/
 │   └── lua-exec.ts          # Executes a named Lua tool
 │
-├── lua-tools/                # 9 Lua scripts — each becomes a tool
+├── lua-tools/                # 9 Lua scripts — each becomes a tool the agent can call
 │   ├── file-read.lua
 │   ├── file-write.lua
 │   ├── json-encode.lua
 │   └── ... (datetime, string, math utilities)
 │
-├── skills/                   # 7 skills for the AI to use
+├── skills/                   # 7 skills the agent reads in context
 │   ├── web-search-tool/
 │   ├── json-output-optimizer/
 │   ├── resume-optimizer/
@@ -84,7 +135,7 @@ Krebs/
 │   └── index.ts              # SQLite — sessionId → sessionFile mapping
 │
 └── prompts/
-    └── index.ts              # System prompt (Chinese)
+    └── index.ts              # Agent system prompt (Chinese)
 ```
 
 ## HTTP API
@@ -139,16 +190,16 @@ Receive events:
 | Event | When |
 |-------|------|
 | `connected` | Connection open |
-| `text_delta` | Streaming token |
+| `text_delta` | Streaming token from agent |
 | `think_block` | `<think>` tag content |
-| `tool_call_start` | AI started a tool call |
+| `tool_call_start` | Agent started generating a tool call |
 | `tool_start` / `tool_end` | Tool execution |
 | `turn_end` | Round complete |
-| `response_end` | Full response done |
+| `response_end` | Full agent response done |
 
 ## Web UI
 
-Open `http://localhost:3000/`. Connects to `/ws`, authenticates automatically via `/api/auth/internal`. Features:
+Open `http://localhost:3000/`. Connects to `/ws`, authenticates automatically. Features:
 
 - Real-time token streaming
 - Markdown rendering with code highlighting
@@ -157,7 +208,7 @@ Open `http://localhost:3000/`. Connects to `/ws`, authenticates automatically vi
 
 ## Lua Tools
 
-Drop a Lua script into `lua-tools/`, restart the server. The AI can call it by name.
+Drop a Lua script into `lua-tools/`, restart the server. The agent can call it by name.
 
 ```lua
 -- lua-tools/json-encode.lua
@@ -167,11 +218,11 @@ function main(args)
 end
 ```
 
-The AI calls it as `lua_exec("json-encode", { value })`.
+Agent calls it as `lua_exec("json-encode", { value })`.
 
 ## Skills
 
-Skills are `SKILL.md` files the AI reads when relevant. All 7 are listed in `skills/index.ts`.
+Skills are `SKILL.md` files the agent reads when relevant. All 7 are listed in `skills/index.ts`.
 
 ## Tech Stack
 
@@ -181,17 +232,18 @@ Bun · TypeScript · React 19 · bun:sqlite · WebSocket · Wasmoon (Lua 5.4)
 
 ### AI 网关 — 聊天界面 + HTTP + WebSocket
 
-自托管的 AI 编程网关。从浏览器、脚本或任何 HTTP 客户端连接。会话跨请求持久化。所有文件写入 `custom/`。
+自托管 AI 编程网关，内置**Agent**作为核心。Agent 维护会话上下文、执行工具、调用技能——Krebs 只负责把 Agent 通过 HTTP 和 WebSocket 暴露出来。
 
 ## 特性
 
+- **内置 Agent** — 有状态的编程 Agent，请求之间保持记忆
 - **浏览器界面** — 实时聊天，Markdown 渲染，代码高亮。无需账号，无需外部服务
 - **HTTP API** — 一次 `POST /api/messages` 请求，适合 CI/CD、脚本、工具集成
 - **WebSocket API** — 实时流式返回 token 和工具执行事件
 - **会话持久化** — 通过 `sessionId` 随时恢复历史对话
-- **工具执行** — AI 可以在 `custom/` 中读写文件、执行命令
-- **Lua 工具** — 将 `.lua` 文件放入 `lua-tools/`，立即成为可用工具（共 9 个内置）
-- **技能系统** — 7 个内置技能（网页搜索、JSON 校验、简历优化等）
+- **工具执行** — Agent 在 `custom/` 中读写文件、执行命令
+- **Lua 工具** — 将 `.lua` 文件放入 `lua-tools/`，Agent 可立即调用（共 9 个内置）
+- **技能系统** — 7 个内置技能，Agent 在相关场景下自动读取使用（搜索、JSON 校验、简历优化等）
 - **多模型** — 改一个环境变量即可切换 DeepSeek / Claude
 
 ## 快速开始
@@ -215,38 +267,87 @@ open http://localhost:3000
 | `MODEL_PROVIDER` | `deepseek` | `deepseek` 或 `anthropic` |
 | `MODEL_BASE_URL` | `https://api.deepseek.com/v1` | 自定义模型端点 |
 | `MODEL_ID` | `deepseek-chat` | 模型名称 |
-| `SESSION_TIMEOUT_MS` | `480000` | 最大运行时间（8 分钟） |
+| `SESSION_TIMEOUT_MS` | `480000` | Agent 最大运行时间（8 分钟） |
+
+## 架构
+
+```
+                     浏览器              HTTP 客户端             脚本
+                          │                   │                    │
+                     ┌────▼────┐       ┌────▼────┐        ┌────▼────┐
+                     │   Web   │       │   HTTP  │        │   WS    │
+                     │   UI    │       │   API   │        │  Client │
+                     └────┬────┘       └────┬────┘        └────┬────┘
+                          │                 │                 │
+                          └─────────────────┼─────────────────┘
+                                            │
+                          ┌─────────────────▼─────────────────┐
+                          │          Krebs Gateway            │
+                          │                                      │
+                          │  ws-router        HTTP 路由         │
+                          │  ├── AuthHandler   /api/messages    │
+                          │  ├── PromptHandler /api/sessions     │
+                          │  ├── StopHandler   /api/auth         │
+                          │  └── SwitchSession                  │
+                          └─────────────────┬───────────────────┘
+                                            │
+                          ┌─────────────────▼───────────────────┐
+                          │              Agent                  │
+                          │                                      │
+                          │  session-service                     │
+                          │    创建和管理运行时                   │
+                          │                                      │
+                          │  event-subscription                   │
+                          │    将事件转发到 WebSocket            │
+                          │                                      │
+                          │  think-parser                         │
+                          │    提取模型输出中的 <think> 标签      │
+                          │                                      │
+                          │  tools/  +  lua-tools/  +  skills/  │
+                          │  bash     9 个 Lua 脚本     7 个技能  │
+                          └─────────────────┬───────────────────┘
+                                            │
+                          ┌─────────────────▼───────────────────┐
+                          │        SessionManager               │
+                          │   持久化会话 → ./sessions/         │
+                          └───────────────────────────────────┘
+
+                          ┌───────────────────────────────────┐
+                          │     db/sessions_meta (SQLite)      │
+                          │  sessionId → sessionFile 映射       │
+                          └───────────────────────────────────┘
+```
 
 ## 项目结构
 
 ```
 Krebs/
-├── server/                    # 服务器
+├── server/                    # Krebs 网关
 │   ├── index.ts              # Bun.serve() — HTTP + WebSocket 启动
-│   ├── session-service.ts     # Runtime 工厂，session 生命周期
-│   ├── event-subscription.ts # 将 AI 事件转发到 WebSocket
+│   ├── session-service.ts     # Agent runtime 工厂 + 会话生命周期
+│   ├── event-subscription.ts # 将 Agent 事件转发到 WebSocket
 │   ├── think-parser.ts        # 从模型输出中提取 <think> 标签
 │   ├── ws-router.ts           # WS 消息路由到各 handler
-│   ├── handlers/              # WS 消息处理器（prompt, stop, auth, switch）
-│   └── routes/               # HTTP 处理器（/api/messages, /api/sessions, ...）
+│   ├── handlers/              # Prompt / Stop / Auth / SwitchSession
+│   └── routes/               # /api/messages, /api/sessions, /api/auth
 │
-├── lib/                      # 共享模块
+├── lib/                      # 共享工具
 │   ├── logger.ts             # NORMAL / DEBUG 两种日志模式
 │   ├── session-repository.ts  # SessionRepository 接口 + 内存实现
-│   └── session-transcript.ts  # 从 AI 响应中提取内容
+│   └── session-transcript.ts  # 从 Agent 响应中提取内容
 │
 ├── tools/                    # 工具系统
 │   ├── lua-runtime.ts        # Lua 5.4 虚拟机（Wasmoon）
 │   ├── lua-tools-registry.ts # 自动加载 lua-tools/ 下所有 *.lua
 │   └── lua-exec.ts          # 执行命名的 Lua 工具
 │
-├── lua-tools/                # 9 个 Lua 脚本 — 每个对应一个工具
+├── lua-tools/                # 9 个 Lua 脚本 — 每个都成为 Agent 可调用的工具
 │   ├── file-read.lua
 │   ├── file-write.lua
 │   ├── json-encode.lua
 │   └── ...（时间、字符串、数学工具）
 │
-├── skills/                   # 7 个技能，AI 在相关场景下自动使用
+├── skills/                   # 7 个技能，Agent 在相关场景下自动读取
 │   ├── web-search-tool/
 │   ├── json-output-optimizer/
 │   ├── resume-optimizer/
@@ -260,12 +361,12 @@ Krebs/
 │   └── index.ts              # SQLite — sessionId → sessionFile 映射
 │
 └── prompts/
-    └── index.ts              # System prompt（中文助手）
+    └── index.ts              # Agent system prompt（中文）
 ```
 
 ## HTTP API
 
-需要 `Authorization: Bearer <token>` — 首次启动时 token 会输出到控制台并写入 `.env`。
+需要 `Authorization: Bearer <token>` — 首次启动时 token 输出到控制台并写入 `.env`。
 
 ### 发送消息
 
@@ -315,16 +416,16 @@ ws.send(JSON.stringify({ type: "switch_session", sessionId: "..." }));
 | 事件 | 触发时机 |
 |------|----------|
 | `connected` | 连接建立 |
-| `text_delta` | 流式返回 token |
+| `text_delta` | Agent 流式输出 token |
 | `think_block` | `<think>` 标签内容 |
-| `tool_call_start` | AI 开始生成工具调用 |
+| `tool_call_start` | Agent 开始生成工具调用 |
 | `tool_start` / `tool_end` | 工具执行开始/结束 |
 | `turn_end` | 回合完成 |
-| `response_end` | 完整响应结束 |
+| `response_end` | Agent 完整响应结束 |
 
 ## Web UI
 
-打开 `http://localhost:3000/`。自动连接 `/ws`，通过 `/api/auth/internal` 认证。功能：
+打开 `http://localhost:3000/`。自动连接 `/ws` 并认证。功能：
 
 - 实时 token 流式输出
 - Markdown 渲染 + 代码高亮
@@ -333,7 +434,7 @@ ws.send(JSON.stringify({ type: "switch_session", sessionId: "..." }));
 
 ## Lua 工具
 
-将 Lua 脚本放入 `lua-tools/`，重启服务器即可。AI 通过名称调用：
+将 Lua 脚本放入 `lua-tools/`，重启服务器即可。Agent 通过名称调用：
 
 ```lua
 -- lua-tools/json-encode.lua
@@ -343,11 +444,11 @@ function main(args)
 end
 ```
 
-AI 调用方式：`lua_exec("json-encode", { value })`
+Agent 调用方式：`lua_exec("json-encode", { value })`
 
 ## 技能（Skills）
 
-技能是 `SKILL.md` 文件，AI 在相关场景下自动读取使用。共 7 个，见 `skills/index.ts`。
+技能是 `SKILL.md` 文件，Agent 在相关场景下自动读取使用。共 7 个，见 `skills/index.ts`。
 
 ## 技术栈
 
