@@ -3,9 +3,6 @@
 [English](#english) | [中文](#中文)
 
 ---
-
-## English
-
 ### AI Gateway — Chat UI + HTTP + WebSocket
 
 A self-hosted AI coding gateway. Connect from a browser, a script, or any HTTP client. Sessions persist across requests. All files land in `custom/`.
@@ -181,8 +178,6 @@ Skills are `SKILL.md` files the AI reads when relevant. All 7 are listed in `ski
 Bun · TypeScript · React 19 · bun:sqlite · WebSocket · Wasmoon (Lua 5.4)
 
 ---
-
-## 中文
 
 ### AI 网关 — 聊天界面 + HTTP + WebSocket
 
