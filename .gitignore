@@ -39,6 +39,7 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # sessions
 sessions
+db/sessions.db
 
 # custom
 custom
