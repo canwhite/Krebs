@@ -165,7 +165,7 @@ export function createToolDefinition(meta: LuaToolMeta): ToolDefinition {
     parameters: Type.Object(paramProps),
     execute: async (_, params, _signal, _onUpdate, _ctx) => {
       try {
-        const result = await luaRuntime.execute(script, params);
+        const result = await luaRuntime.execute(script, params as Record<string, unknown> | undefined);
         return {
           content: [
             { type: "text" as const, text: JSON.stringify(result) },

@@ -7,7 +7,7 @@
  * - extractCompleteContent()
  */
 
-import { BunFile } from "bun";
+import type { BunFile } from "bun";
 
 interface Logger {
   log(msg: string): void;

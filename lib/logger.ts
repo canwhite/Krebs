@@ -21,7 +21,7 @@ function getLogLevel(): LogLevel {
 /**
  * Logger 接口
  */
-export interface Logger {
+interface Logger {
   log(message: string): void;
   close(): void;
   isDebugEnabled(): boolean;
@@ -97,4 +97,3 @@ class MonitorLogger implements Logger {
  * 导出类和接口
  */
 export { MonitorLogger };
-export type { Logger };
