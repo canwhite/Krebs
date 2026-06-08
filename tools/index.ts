@@ -4,34 +4,48 @@
  * 集中管理所有可用的 tools，便于维护和扩展
  */
 
-import { getCurrentTimeTool } from "./get-current-time.js";
-// import { writeFileTool } from "./write-file.js";
+import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
+import { luaExecTool } from "./lua-exec.js";
 
 export interface ToolConfig {
   name: string;
   description: string;
-  tool: any;
+  tool: ToolDefinition;
 }
 
 /**
  * 所有可用的 tools 列表
  *
- * 添加新 tool 时：
- * 1. 在 tools/ 目录下创建新的 tool 文件
- * 2. 在此数组中添加对应的配置
+ * 动态注册：通过 loadLuaToolDefinitions 加载的 Lua 工具会加入此数组
  */
 export const TOOLS: ToolConfig[] = [
   {
-    name: "get-current-time",
-    description: "获取当前时间和日期",
-    tool: getCurrentTimeTool,
+    name: "lua_exec",
+    description: "执行预注册的 Lua 脚本工具（fallback）",
+    tool: luaExecTool,
   },
-//   {
-//     name: "write-file",
-//     description: "将内容写入文件，支持创建新文件或覆盖现有文件",
-//     tool: writeFileTool,
-//   },
 ];
+
+/**
+ * 动态注册一个工具
+ */
+export function registerTool(definition: ToolDefinition): void {
+  // 检查是否已存在
+  const existingIndex = TOOLS.findIndex((t) => t.name === definition.name);
+  if (existingIndex >= 0) {
+    TOOLS[existingIndex] = {
+      name: definition.name,
+      description: definition.description,
+      tool: definition,
+    };
+  } else {
+    TOOLS.push({
+      name: definition.name,
+      description: definition.description,
+      tool: definition,
+    });
+  }
+}
 
 /**
  * 根据 name 获取 tool 配置
@@ -50,6 +64,6 @@ export function getToolNames(): string[] {
 /**
  * 获取所有 tool 对象数组（用于 customTools）
  */
-export function getToolObjects(): any[] {
+export function getToolObjects(): ToolDefinition[] {
   return TOOLS.map((t) => t.tool);
 }

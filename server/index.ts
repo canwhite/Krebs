@@ -24,6 +24,10 @@ import {
 } from "./routes/sessions.js";
 import { handleInternalAuth, handleExternalAuth } from "./routes/auth.js";
 import { createWsRouter, type WsRouter } from "./ws-router.js";
+import { luaRuntime } from "../tools/lua-runtime.js";
+import { loadLuaToolDefinitions } from "../tools/lua-tools-registry.js";
+import { registerTool } from "../tools/index.js";
+import { join } from "node:path";
 import {
   createAuthHandler,
   createStopHandler,
@@ -42,6 +46,22 @@ if (!MODEL_CONFIG.apiKey) {
 }
 
 initToken();
+
+// ==================== Lua Tools Init ====================
+const luaToolsPath = join(process.cwd(), "lua-tools");
+
+async function initLuaTools() {
+  try {
+    await luaRuntime.initialize();
+    const definitions = await loadLuaToolDefinitions(luaToolsPath);
+    for (const def of definitions) {
+      registerTool(def);
+    }
+    console.log(`[Lua] 已加载 ${definitions.length} 个工具`);
+  } catch (error: any) {
+    console.warn(`[Lua] 初始化失败: ${error.message}`);
+  }
+}
 
 // ==================== Constants ====================
 const PORT = process.env.PORT ? parseInt(process.env.PORT ?? "3000", 10) : 3000;
@@ -67,8 +87,12 @@ function getContentType(filePath: string): string {
 }
 
 // ==================== Server ====================
-const server = Bun.serve({
-  port: PORT,
+(async () => {
+  // 等待 Lua 工具初始化完成
+  await initLuaTools();
+
+  const server = Bun.serve({
+    port: PORT,
   async fetch(req: Request) {
     const url = new URL(req.url);
 
@@ -351,3 +375,4 @@ console.log("=".repeat(60));
 console.log(`📡 HTTP: http://localhost:${server.port}`);
 console.log(`🔌 WebSocket: ws://localhost:${server.port}/ws`);
 console.log("=".repeat(60));
+})();
