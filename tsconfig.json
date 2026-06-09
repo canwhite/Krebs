@@ -22,6 +22,6 @@
     "types": ["bun-types"],
     "typeRoots": ["./node_modules/@types", "./node_modules", "./types"]
   },
-  "include": ["server/**/*.ts", "lib/**/*.ts", "db/**/*.ts", "tools/**/*.ts", "skills/**/*.ts", "prompts/**/*.ts", "types/**/*.d.ts"],
+  "include": ["server/**/*.ts", "lib/**/*.ts", "db/**/*.ts", "tools/**/*.ts", "skills/**/*.ts", "prompts/**/*.ts", "types/**/*.d.ts", ".pi/extensions/**/*.ts"],
   "exclude": ["node_modules", "frontend"]
 }
