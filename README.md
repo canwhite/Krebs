@@ -16,6 +16,7 @@ A self-hosted AI coding gateway with an embedded **agent** at its core. The agen
 - **WebSocket API** — Stream tokens and tool events as they happen
 - **Persistent Sessions** — Resume any past conversation by `sessionId`
 - **Tool Execution** — Agent reads, writes, and runs code in `custom/`
+- **Sandbox** — Optional wasmtime + coreutils sandbox for write operations (read-write separation)
 - **Lua Tools** — Drop a `.lua` file in `lua-tools/`, the agent can call it immediately (9 built-in)
 - **Skills** — 7 built-in skills the agent reads in relevant contexts (web search, JSON validation, resume optimization, etc.)
 - **Multi-Model** — Switch between DeepSeek / Claude by setting one env var
@@ -102,6 +103,9 @@ Krebs/
 │   ├── event-subscription.ts # Forwards agent events over WebSocket
 │   ├── think-parser.ts        # Extract <think> tags from model output
 │   ├── ws-router.ts           # Route WS messages to handlers
+│   ├── sandbox/              # wasmtime sandbox (optional)
+│   │   ├── executor.ts       # wasmtime wrapper
+│   │   └── tools/bash.ts    # sandbox bash tool
 │   ├── handlers/              # Prompt / Stop / Auth / SwitchSession
 │   └── routes/               # /api/messages, /api/sessions, /api/auth
 │
@@ -134,9 +138,25 @@ Krebs/
 ├── db/
 │   └── index.ts              # SQLite — sessionId → sessionFile mapping
 │
+├── wasm/                      # wasmtime + coreutils
+│   ├── bin/wasmtime          # v45.0.1
+│   └── coreutils/coreutils.wasm
+│
 └── prompts/
     └── index.ts              # Agent system prompt (Chinese)
 ```
+
+## Sandbox (Optional)
+
+Enable with `createRuntime(sessionId, sessionPath, true)`.
+
+**Read-write separation**:
+- **Read commands** (`ls`, `cat`, `grep`, etc.) → passthrough to native bash
+- **Write commands** (`echo`, `mkdir`, `rm`, etc.) → sandbox via wasmtime + coreutils
+
+**Security**: Write operations are restricted to `cwd` via wasmtime `--dir` flag.
+
+See [docs/sandbox-wasmtime.md](docs/sandbox-wasmtime.md) for details.
 
 ## HTTP API
 
@@ -242,6 +262,7 @@ Bun · TypeScript · React 19 · bun:sqlite · WebSocket · Wasmoon (Lua 5.4)
 - **WebSocket API** — 实时流式返回 token 和工具执行事件
 - **会话持久化** — 通过 `sessionId` 随时恢复历史对话
 - **工具执行** — Agent 在 `custom/` 中读写文件、执行命令
+- **沙箱** — 可选的 wasmtime + coreutils 沙箱（读写分离）
 - **Lua 工具** — 将 `.lua` 文件放入 `lua-tools/`，Agent 可立即调用（共 9 个内置）
 - **技能系统** — 7 个内置技能，Agent 在相关场景下自动读取使用（搜索、JSON 校验、简历优化等）
 - **多模型** — 改一个环境变量即可切换 DeepSeek / Claude
@@ -360,9 +381,25 @@ Krebs/
 ├── db/
 │   └── index.ts              # SQLite — sessionId → sessionFile 映射
 │
+├── wasm/                      # wasmtime + coreutils
+│   ├── bin/wasmtime          # v45.0.1
+│   └── coreutils/coreutils.wasm
+│
 └── prompts/
     └── index.ts              # Agent system prompt（中文）
 ```
+
+## 沙箱（可选）
+
+启用方式：`createRuntime(sessionId, sessionPath, true)`
+
+**读写分离**：
+- **读命令**（`ls`, `cat`, `grep` 等）→ 透传到原生 bash
+- **写命令**（`echo`, `mkdir`, `rm` 等）→ 通过 wasmtime + coreutils 沙箱执行
+
+**安全性**：写操作通过 wasmtime `--dir` 限制在 `cwd` 目录。
+
+详见 [docs/sandbox-wasmtime.md](docs/sandbox-wasmtime.md)。
 
 ## HTTP API
 
