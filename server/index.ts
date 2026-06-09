@@ -241,7 +241,7 @@ function getContentType(filePath: string): string {
 
       logger.log(`[SESSION] Session ${sessionId} started, WebSocket opened`);
 
-      createRuntime(sessionId)
+      createRuntime(sessionId, undefined, true)
         .then((result) => {
           const runtime = result.runtime;
           const session = runtime.session;

@@ -27,6 +27,7 @@ import { getModel } from "@mariozechner/pi-ai";
 import { join } from "path";
 import { existsSync, readFileSync } from "fs";
 import { TOOLS } from "../tools/index.js";
+import { getDefaultExecutor, createSandboxBashTool } from "./sandbox/mod.js";
 import { SKILLS } from "../skills/index.js";
 import { systemPrompt } from "../prompts/index.js";
 import {
@@ -71,6 +72,7 @@ const createRuntimeFactory: CreateAgentSessionRuntimeFactory = async (
   options
 ) => {
   const cwd = options.cwd;
+  const sandbox = (options as any).sandbox as boolean | undefined;
   const authStorage = AuthStorage.create();
   const modelRegistry = ModelRegistry.create(authStorage);
 
@@ -89,6 +91,38 @@ const createRuntimeFactory: CreateAgentSessionRuntimeFactory = async (
       baseDir: s.baseDir,
     }),
   }));
+
+  // 检查是否启用沙箱
+  const useSandbox = sandbox === true;
+
+  // 透传函数：直接执行命令（不走沙箱）
+  const passthroughBash = async (command: string, cwd: string) => {
+    return new Promise<{ content: { type: "text"; text: string }[]; details: { exitCode: number; stderr: string } }>((resolve, reject) => {
+      const { spawn } = require("child_process");
+      const shell = process.platform === "win32" ? "cmd.exe" : "/bin/sh";
+      const shellArgs = process.platform === "win32" ? ["/c", command] : ["-c", command];
+
+      const proc = spawn(shell, shellArgs, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+      let stdout = "";
+      let stderr = "";
+
+      proc.stdout?.on("data", (data: Buffer) => { stdout += data.toString(); });
+      proc.stderr?.on("data", (data: Buffer) => { stderr += data.toString(); });
+
+      proc.on("close", (code: number | null) => {
+        resolve({
+          content: [{ type: "text", text: stdout }],
+          details: { exitCode: code ?? 0, stderr },
+        });
+      });
+      proc.on("error", reject);
+    });
+  };
+
+  // 根据是否启用沙箱选择 bash 工具
+  const bashTool = useSandbox
+    ? createSandboxBashTool(getDefaultExecutor(), cwd, passthroughBash)
+    : createBashTool(join(cwd, "custom"));
 
   const resourceLoader = new DefaultResourceLoader({
     cwd,
@@ -109,7 +143,7 @@ const createRuntimeFactory: CreateAgentSessionRuntimeFactory = async (
     modelRegistry,
     tools: [
       createReadTool(cwd),
-      createBashTool(join(cwd, "custom")),
+      bashTool as any,
       createEditTool(cwd),
     ],
     customTools: TOOLS.map((t) => t.tool),
@@ -129,7 +163,7 @@ const createRuntimeFactory: CreateAgentSessionRuntimeFactory = async (
   };
 };
 
-async function createRuntime(sessionId: string, sessionPath?: string) {
+async function createRuntime(sessionId: string, sessionPath?: string, sandbox?: boolean) {
   const cwd = process.cwd();
   const sessionManager = SessionManager.create(cwd, join(cwd, "sessions"));
 
@@ -137,7 +171,8 @@ async function createRuntime(sessionId: string, sessionPath?: string) {
     cwd,
     agentDir: getAgentDir(),
     sessionManager,
-  });
+    sandbox,
+  } as any);
 
   // 如果指定了 sessionPath，切换到该会话
   if (sessionPath) {

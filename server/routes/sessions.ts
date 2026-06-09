@@ -68,7 +68,7 @@ async function handleCreateSession(): Promise<Response> {
   const logger = MonitorLogger.createInstance("http");
   const startTime = Date.now();
   const sessionId = generateSessionId();
-  await createRuntime(sessionId);
+  await createRuntime(sessionId, undefined, true);
   logger.log(
     `[HTTP OUT] Method: POST | Path: /api/sessions | Status: 200 | SessionID: ${sessionId} | Duration: ${Date.now() - startTime}ms`,
   );

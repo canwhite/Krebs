@@ -52,7 +52,7 @@ async function handleApiMessage(req: Request): Promise<Response> {
       }
     } else {
       usedSessionId = generateSessionId();
-      const result = await createRuntime(usedSessionId);
+      const result = await createRuntime(usedSessionId, undefined, true);
       session = result.runtime.session;
       // 标记为临时会话，请求完成后清理 (P1-2 修复)
       (result.runtime as any).temporary = true;
