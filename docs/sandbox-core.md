@@ -87,7 +87,7 @@ const passthroughBash = async (command, cwd) => {
                     ▼                    ▼
          ┌─────────────────┐   ┌─────────────────────┐
          │  /bin/sh        │   │  wasmtime           │
-         │  (原 bash)      │   │  --dir=<cwd>        │
+         │  (原 bash)      │   │  --dir <cwd>       │
          │                  │   │  coreutils.wasm     │
          └─────────────────┘   └─────────────────────┘
 ```
@@ -125,22 +125,16 @@ const WRITE_COMMANDS = new Set([
 ### wasmtime 调用
 
 ```typescript
-function runWriteCommand(wasmtime, wasmFile, command, args, cwd) {
-  return new Promise((resolve) => {
-    const proc = spawn(wasmtime, [
-      "--dir", cwd,           // 限制只能访问 cwd
-      wasmFile,
-      command,                // coreutils.wasm 单文件，命令名作为参数
-      ...args,
-    ], { stdio: ["ignore", "pipe", "pipe"] });
-
-    let stdout = "", stderr = "";
-    proc.stdout.on("data", (d) => stdout += d);
-    proc.stderr.on("data", (d) => stderr += d);
-    proc.on("close", (code) => resolve({ stdout, stderr, exitCode: code }));
-  });
-}
+// 实际调用
+spawn(wasmtime, [
+  "--dir", cwd,           // 注意：是空格分开，不是 =
+  wasmFile,
+  command,                // coreutils.wasm 单文件，命令名作为参数
+  ...args,
+], { stdio: ["ignore", "pipe", "pipe"] });
 ```
+
+**注意**：`--dir` 和 `<cwd>` 之间是**空格分开**，不是 `=`。
 
 ---
 
