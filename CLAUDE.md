@@ -11,3 +11,21 @@ When compressing, preserve in priority order:
 ## type check
 1. if testing， do not forget to do type check
 2. if type checking， plase use bun type check tool
+
+
+## Verification
+
+For backend changes:
+
+- Run `yarn build` or if available, run yarn lint 
+- For API changes, update contract tests under `tests/contracts/`
+
+For UI changes:
+
+- Capture before/after screenshots if visual
+
+Definition of done:
+
+- All tests pass
+- Lint passes
+- No TODO left behind unless explicitly tracked
