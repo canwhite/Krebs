@@ -17,7 +17,7 @@ When compressing, preserve in priority order:
 
 For backend changes:
 
-- Run `yarn build` or if available, run yarn lint 
+- Run build or if available, run lint 
 - For API changes, update contract tests under `tests/contracts/`
 
 For UI changes:
