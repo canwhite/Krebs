@@ -1,4 +1,4 @@
-# Micro Compact 实现计划
+# Micro Compact 实现文档
 
 ## 概述
 
@@ -64,6 +64,37 @@ api.on("context", async (event, ctx) => {
 });
 ```
 
+## 实际类型结构（验证）
+
+### ToolResultMessage 结构
+
+```typescript
+// pi-ai/dist/types.d.ts:134-142
+interface ToolResultMessage<TDetails = any> {
+  role: "toolResult";  // 重要：不是 "user"，是独立的 "toolResult"
+  toolCallId: string;
+  toolName: string;
+  content: (TextContent | ImageContent)[];  // 重要：是数组，不是 string
+  details?: TDetails;
+  isError: boolean;
+  timestamp: number;
+}
+
+// TextContent 结构
+interface TextContent {
+  type: "text";
+  text: string;
+}
+```
+
+### AgentMessage 类型
+
+```typescript
+// types.d.ts:214
+export type AgentMessage = Message | CustomAgentMessages[keyof CustomAgentMessages];
+export type Message = UserMessage | AssistantMessage | ToolResultMessage;
+```
+
 ## 实现设计
 
 ### 文件结构
@@ -86,14 +117,13 @@ server/
 
 ```typescript
 interface MicroCompactConfig {
-  keepRecent: number;      // 保留最近 N 个 tool result（默认 8）
+  keepRecent: number;        // 保留最近 N 个 tool result（默认 8）
   maxAge: number;           // 超过多少轮视为"旧"（默认 15）
   truncateThreshold: number; // 内容长度阈值，超过才 truncate（默认 300）
-  enabled: boolean;         // 是否启用
+  enabled: boolean;          // 是否启用
 }
 
-// 从 settings.json 读取
-const DEFAULT_MICRO_COMPACT_CONFIG: MicroCompactConfig = {
+export const DEFAULT_MICRO_COMPACT_CONFIG: MicroCompactConfig = {
   keepRecent: 8,
   maxAge: 15,
   truncateThreshold: 300,
@@ -104,11 +134,12 @@ const DEFAULT_MICRO_COMPACT_CONFIG: MicroCompactConfig = {
 ### 核心算法
 
 ```
-1. 扫描 messages 中所有 tool_result 类型的 content block
+1. 扫描 messages 中所有 role === "toolResult" 的消息
 2. 按 age（消息索引）排序，age 越大越旧
-3. 保留最近 keepRecent 个
-4. 其余超过 truncateThreshold 的 truncate 成占位符
-5. 完整内容通过 appendCustomEntry 持久化到 transcript
+3. 过滤：跳过已包含 [MicroCompact] 占位符的（防止重复处理）
+4. 保留最近 keepRecent 个
+5. 其余超过 truncateThreshold 的 truncate 成占位符
+6. 完整内容通过 appendEntry 持久化到 transcript
 ```
 
 ### 占位符格式
@@ -119,7 +150,7 @@ const DEFAULT_MICRO_COMPACT_CONFIG: MicroCompactConfig = {
 
 ### 持久化策略
 
-使用 `appendCustomEntry` 将完整内容写入 transcript（不进入 LLM context）：
+使用 `appendEntry` 将完整内容写入 transcript（不进入 LLM context）：
 
 ```typescript
 ctx.appendEntry("micro_compact", {
@@ -130,7 +161,7 @@ ctx.appendEntry("micro_compact", {
 });
 ```
 
-## 实现步骤
+## 实现代码
 
 ### Step 1: 创建 types.ts（共享类型）
 
@@ -157,11 +188,32 @@ export const DEFAULT_MICRO_COMPACT_CONFIG: MicroCompactConfig = {
 ```typescript
 // server/services/compact/microCompact.ts
 
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import type { AgentMessage, ToolResultMessage } from "@mariozechner/pi-agent-core";
+import type { TextContent } from "@mariozechner/pi-ai";
 import type { MicroCompactConfig } from "./types.js";
 
 export function createMicroCompact(config: Partial<MicroCompactConfig> = {}) {
   const cfg = { ...DEFAULT_MICRO_COMPACT_CONFIG, ...config };
+
+  const MICRO_COMPACT_PREFIX = "[MicroCompact]";
+
+  /**
+   * 从 content 数组中提取纯文本
+   */
+  function extractTextContent(content: (TextContent | ImageContent)[]): string {
+    return content
+      .filter((part): part is TextContent => part.type === "text")
+      .map(part => part.text)
+      .join("");
+  }
+
+  /**
+   * 检查内容是否已被 MicroCompact 处理
+   */
+  function isAlreadyTruncated(content: (TextContent | ImageContent)[]): boolean {
+    const text = extractTextContent(content);
+    return text.includes(MICRO_COMPACT_PREFIX);
+  }
 
   return {
     /**
@@ -172,22 +224,22 @@ export function createMicroCompact(config: Partial<MicroCompactConfig> = {}) {
 
       for (let i = 0; i < messages.length; i++) {
         const msg = messages[i];
-        if (msg.role === "user" && Array.isArray(msg.content)) {
-          for (let j = 0; j < msg.content.length; j++) {
-            const part = msg.content[j];
-            if (part.type === "tool_result") {
-              const content = typeof part.content === "string"
-                ? part.content
-                : JSON.stringify(part.content);
-              toolResults.push({
-                messageIndex: i,
-                partIndex: j,
-                part,
-                age: messages.length - i,
-                contentLength: content.length,
-              });
-            }
+        // tool_result 是独立的 role，不是嵌套在 user 消息中
+        if (msg.role === "toolResult") {
+          const toolMsg = msg as ToolResultMessage;
+          const content = extractTextContent(toolMsg.content);
+
+          // 跳过已处理的
+          if (isAlreadyTruncated(toolMsg.content)) {
+            continue;
           }
+
+          toolResults.push({
+            messageIndex: i,
+            toolMessage: toolMsg,
+            age: messages.length - i,
+            contentLength: content.length,
+          });
         }
       }
 
@@ -198,22 +250,42 @@ export function createMicroCompact(config: Partial<MicroCompactConfig> = {}) {
 
     /**
      * 执行 truncate（返回修改后的 messages copy）
+     * 使用 immutable 更新，避免深拷贝
      */
     truncateToolResults(
       messages: AgentMessage[],
       toPrune: PruneTarget[]
     ): AgentMessage[] {
-      const modified = JSON.parse(JSON.stringify(messages));
-
+      // 记录需要修改的 index
+      const truncateMap = new Map<number, string>();
       for (const target of toPrune) {
         if (target.contentLength <= cfg.truncateThreshold) continue;
 
-        const part = modified[target.messageIndex].content[target.partIndex];
-        const toolName = part.name || "unknown";
-        part.content = `[MicroCompact] Previous ${toolName} result (cleared to save tokens, original length: ${target.contentLength})`;
+        const toolMsg = target.toolMessage;
+        const placeholder = `[MicroCompact] Previous ${toolMsg.toolName} result (cleared to save tokens, original length: ${target.contentLength})`;
+
+        // 将原 content 数组替换为只包含占位符文本的数组
+        truncateMap.set(target.messageIndex, placeholder);
       }
 
-      return modified;
+      // 如果没有需要修改的，直接返回原数组
+      if (truncateMap.size === 0) {
+        return messages;
+      }
+
+      // 构建新数组（immutable 方式）
+      return messages.map((msg, i) => {
+        const placeholder = truncateMap.get(i);
+        if (placeholder === undefined) {
+          return msg;
+        }
+
+        // 创建新的 ToolResultMessage with placeholder
+        return {
+          ...msg,
+          content: [{ type: "text", text: placeholder }] as (TextContent | ImageContent)[],
+        } as ToolResultMessage;
+      });
     },
 
     getConfig() {
@@ -224,8 +296,7 @@ export function createMicroCompact(config: Partial<MicroCompactConfig> = {}) {
 
 interface PruneTarget {
   messageIndex: number;
-  partIndex: number;
-  part: any;
+  toolMessage: ToolResultMessage;
   age: number;
   contentLength: number;
 }
@@ -237,6 +308,7 @@ interface PruneTarget {
 // .pi/extensions/context/index.ts
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent/dist/core/extensions/types.d.ts";
+import type { TextContent, ImageContent } from "@mariozechner/pi-ai";
 import { createMicroCompact } from "../../../server/services/compact/microCompact.js";
 
 const microCompact = createMicroCompact();
@@ -253,37 +325,63 @@ export default function (api: ExtensionAPI) {
 
     // 3. 持久化完整内容到 transcript
     for (const target of toPrune) {
-      const content = typeof target.part.content === "string"
-        ? target.part.content
-        : JSON.stringify(target.part.content);
+      const content = target.toolMessage.content
+        .filter((part): part is TextContent => part.type === "text")
+        .map(part => part.text)
+        .join("");
+
       ctx.appendEntry("micro_compact", {
         originalContent: content,
-        toolName: target.part.name || "unknown",
+        toolName: target.toolMessage.toolName,
         truncatedAt: Date.now(),
         messageIndex: target.messageIndex,
       });
     }
 
-    // 4. 执行 truncate
+    // 4. 执行 truncate（immutable 方式）
     const modifiedMessages = microCompact.truncateToolResults(event.messages, toPrune);
 
     // 5. 通知用户（可选）
-    ctx.ui?.notify?.(`Micro Compact: pruned ${toPrune.length} old tool results`, { type: "info" });
+    if (ctx.ui) {
+      ctx.ui.notify(`Micro Compact: pruned ${toPrune.length} old tool results`, "info");
+    }
 
     return { messages: modifiedMessages };
   });
 }
 ```
 
-## 潜在问题
+## 事前验尸 - 发现的问题及解决方案
 
-| 问题 | 风险 | 解决方案 |
-|------|------|----------|
-| **tool_result 结构** | 不确定是 `tool_result` 还是 `toolResult` | 先用 `part.type` 检查 |
-| **内容类型** | content 可能是 string 或 array | 用 `typeof` 判断 |
-| **多次 truncate** | 同一 message 多次触发 | 检查是否已被 truncate |
-| **性能** | 每次 turn 都扫描 | 仅在超过阈值时才处理 |
-| **缓存失效** | truncate 可能影响 prompt cache | 不碰 cache 区（头部消息） |
+| 问题 | 原设计风险 | 解决方案 |
+|------|----------|----------|
+| **tool_result 结构错误** | 原文档假设 tool_result 在 `user` role 消息的 content 数组中 | 修正：`ToolResultMessage` 是独立的 `role: "toolResult"` 消息 |
+| **content 类型错误** | 原文档假设 content 是 string | 修正：content 是 `(TextContent \| ImageContent)[]`，需要提取 text |
+| **重复 truncate** | 同一消息多次触发会重复处理 | 增加检查：`isAlreadyTruncated()` 过滤已处理的 |
+| **深拷贝性能** | `JSON.parse(JSON.stringify)` 开销大 | 改用 immutable map 方式：先记录要修改的 index，再 map 构建新数组 |
+| **UI notify 可能不存在** | `ctx.ui` 在某些模式下为 undefined | 加 `if (ctx.ui)` 检查 |
+| **配置来源** | 文档说从 settings.json 读取但未实现 | 保持简单：配置通过 createMicroCompact() 参数传入 |
+| **执行顺序** | 与 Context Collapse 等其他层顺序不清 | 明确：Micro Compact 在 context hook 中执行，是第一道关卡 |
+
+## 边界测试用例
+
+```typescript
+// 测试用例应覆盖：
+const testCases = [
+  // 1. 空 messages
+  { messages: [], expected: "直接返回空数组" },
+  // 2. 无 toolResult
+  { messages: [userMsg, assistantMsg], expected: "返回原数组" },
+  // 3. 少于 keepRecent
+  { messages: [toolResult(100)], expected: "不 truncate" },
+  // 4. 超过阈值
+  { messages: [toolResult(500)], expected: "truncate" },
+  // 5. 已被 truncate 的内容
+  { messages: [truncatedToolResult(500)], expected: "跳过，不重复处理" },
+  // 6. 混合：新的 + 旧的
+  { messages: [toolResult(100), toolResult(500), toolResult(500)], expected: "只 truncate 旧的" },
+];
+```
 
 ## 验证计划
 
@@ -297,6 +395,7 @@ export default function (api: ExtensionAPI) {
    - 内容小于阈值时不 truncate
    - 不超过 keepRecent 时不 truncate
    - 连续多次触发不重复 truncate
+   - 无 UI 模式下不报错
 
 ## 实现顺序
 
@@ -310,3 +409,4 @@ export default function (api: ExtensionAPI) {
 - Claude Code Micro Compact 设计（用户提供的文档）
 - `types.d.ts:391-394` - ContextEvent 接口
 - `types.d.ts:632-634` - ContextEventResult 接口
+- `pi-ai/dist/types.d.ts:134-142` - ToolResultMessage 实际结构
