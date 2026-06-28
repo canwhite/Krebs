@@ -29,3 +29,38 @@ export interface MicroCompactEntry {
   truncatedAt: number;
   originalMessageIndex: number;
 }
+
+/**
+ * Context Collapse 配置
+ */
+export interface ContextCollapseConfig {
+  /** 保留最近的 token 数 */
+  keepRecentTokens: number;
+  /** 保留最近 N 轮对话 */
+  keepRecentRounds: number;
+  /** 最小压缩阈值 */
+  minCompressionTokens: number;
+  /** 触发阈值（百分比） */
+  triggerThreshold: number;
+  /** 是否启用 */
+  enabled: boolean;
+}
+
+export const DEFAULT_CONTEXT_COLLAPSE_CONFIG: ContextCollapseConfig = {
+  keepRecentTokens: 8000,
+  keepRecentRounds: 10,
+  minCompressionTokens: 5000,
+  triggerThreshold: 0.75, // 75%
+  enabled: true,
+};
+
+/**
+ * 压缩层级阈值配置
+ */
+export const LAYER_THRESHOLDS = {
+  budget_reduction: 0.50,
+  snip: 0.60,
+  micro_compact: 0.70,
+  context_collapse: 0.75,
+  auto_compact: 0.835,
+} as const;
