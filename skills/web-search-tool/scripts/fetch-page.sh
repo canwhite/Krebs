@@ -12,7 +12,7 @@ echo "📄 获取页面: $URL"
 echo "================================"
 
 # 获取页面并提取标题和正文（简单示例）
-curl -s -L "$URL" | \
+curl -s -L --max-time 15 "$URL" | \
   grep -o '<title>[^<]*</title>' | \
   sed 's/<title>//g' | sed 's/<\/title>//g'
 

@@ -13,7 +13,7 @@ ENCODED_QUERY=$(echo "$QUERY" | sed 's/ /%20/g')
 echo "🔍 搜索: $QUERY"
 echo "================================"
 
-curl -s "https://api.duckduckgo.com/?q=${ENCODED_QUERY}&format=json" | \
+curl -s --max-time 10 "https://api.duckduckgo.com/?q=${ENCODED_QUERY}&format=json" | \
   grep -o '"AbstractText":"[^"]*"' | \
   sed 's/"AbstractText":"//g' | sed 's/"$//g' | \
   sed 's/\\u0026/\&/g' | sed 's/\\n/\n/g'
