@@ -1,35 +1,34 @@
 # Krebs
 
-[English](#english) | [中文](#中文)
+### AI Gateway — General Purpose Assistant
 
----
+A self-hosted AI gateway with an embedded **general-purpose agent** at its core. Supports conversation, task execution, tool calling, and context compression.
 
-### AI Gateway — Chat UI + HTTP + WebSocket
-
-A self-hosted AI coding gateway with an embedded **agent** at its core. The agent maintains session context, executes tools, and calls skills — Krebs just exposes it over HTTP and WebSocket.
+**Not a coding tool — any task requiring AI assistance works.**
 
 ## Features
 
-- **Embedded Agent** — Stateful coding agent with long-term memory across requests
-- **Browser UI** — Real-time chat, Markdown rendering, code highlighting. No account, no external service
-- **HTTP API** — One-shot `POST /api/messages` for CI/CD, scripts, other tools
-- **WebSocket API** — Stream tokens and tool events as they happen
+- **General Purpose Agent** — Stateful AI assistant with multi-turn dialogue, tool execution, and skill invocation
+- **Context Compression** — Intelligent compression to break token limits (via pi-coding-agent)
+  - Micro Compact (70%): Tool result pruning
+  - Context Collapse (75%): Deep dialogue summarization to projection
+  - Auto Compact (83.5%): Built into pi-coding-agent, aggressive compression near limit
+- **Browser UI** — Real-time chat, Markdown rendering, no account needed
+- **HTTP API** — One `POST /api/messages`, suitable for CI/CD, scripts, tool integration
+- **WebSocket API** — Stream tokens and tool events in real-time
 - **Persistent Sessions** — Resume any past conversation by `sessionId`
-- **Tool Execution** — Agent reads, writes, and runs code in `custom/`
-- **Sandbox** — Optional wasmtime + coreutils sandbox for write operations (read-write separation)
-- **Lua Tools** — Drop a `.lua` file in `lua-tools/`, the agent can call it immediately (9 built-in)
-- **Skills** — 7 built-in skills the agent reads in relevant contexts (web search, JSON validation, resume optimization, etc.)
-- **Multi-Model** — Switch between DeepSeek / Claude by setting one env var
+- **Multi-Model** — Switch between DeepSeek / Claude with one env var
+- **Sandbox** — Optional wasmtime + coreutils sandbox (read-write separation)
+- **Lua Tools** — Drop a `.lua` in `lua-tools/`, agent can call it immediately (9 built-in)
+- **Skills** — 7 built-in skills the agent reads in relevant contexts
 
 ## Quick Start
 
 ```bash
 bun install
-
-export DEEPSEEK_API_KEY=your_key    # or ANTHROPIC_API_KEY
-
+export DEEPSEEK_API_KEY=your_key
 bun run server/index.ts
-open http://localhost:3000
+open http://localhost:3333
 ```
 
 ## Environment
@@ -38,8 +37,8 @@ open http://localhost:3000
 |----------|---------|-------------|
 | `DEEPSEEK_API_KEY` | — | DeepSeek API key (recommended) |
 | `ANTHROPIC_API_KEY` | — | Alternative: Anthropic API key |
-| `PORT` | `3000` | HTTP/WebSocket port |
-| `MODEL_PROVIDER` | `deepseek` | `deepseek` or `anthropic` |
+| `PORT` | `3333` | HTTP/WebSocket port |
+| `MODEL_PROVIDER` | `deepseek` | `deepseek`, `anthropic`, or `ollama` |
 | `MODEL_BASE_URL` | `https://api.deepseek.com/v1` | Custom model endpoint |
 | `MODEL_ID` | `deepseek-chat` | Model name |
 | `SESSION_TIMEOUT_MS` | `480000` | Max agent run time (8 min) |
@@ -57,118 +56,115 @@ open http://localhost:3000
                           └─────────────────┼─────────────────┘
                                             │
                           ┌─────────────────▼─────────────────┐
-                          │            Krebs Gateway           │
-                          │                                      │
-                          │  ws-router        HTTP routes       │
+                          │          Krebs Gateway               │
+                          │                                       │
+                          │  ws-router        HTTP routes          │
                           │  ├── AuthHandler   /api/messages     │
                           │  ├── PromptHandler /api/sessions      │
-                          │  ├── StopHandler   /api/auth          │
-                          │  └── SwitchSession                   │
+                          │  ├── StopHandler   /api/auth         │
+                          │  └── SwitchSession                     │
                           └─────────────────┬───────────────────┘
                                             │
                           ┌─────────────────▼───────────────────┐
-                          │              Agent                   │
-                          │                                      │
-                          │  session-service                     │
-                          │    creates / manages runtime         │
-                          │                                      │
-                          │  event-subscription                   │
-                          │    forwards events → WS               │
-                          │                                      │
-                          │  think-parser                         │
-                          │    extracts <think> tags             │
-                          │                                      │
-                          │  tools/  +  lua-tools/  +  skills/  │
-                          │  bash     9 Lua scripts     7 skills  │
-                          └─────────────────┬───────────────────┘
+                          │              Agent                      │
+                          │                                        │
+                          │  session-service                       │
+                          │    creates / manages runtime            │
+                          │                                        │
+                          │  .pi/extensions/                       │
+                          │    └── context/         上下文压缩    │
+                          │                                        │
+                          │  event-subscription                    │
+                          │    forwards events → WebSocket         │
+                          │                                        │
+                          │  tools/  +  lua-tools/  +  skills/   │
+                          │  bash      9 Lua scripts     7 skills │
+                          └────────────────────────────────────────┘
                                             │
                           ┌─────────────────▼───────────────────┐
-                          │         SessionManager              │
-                          │  persists sessions → ./sessions/   │
-                          └───────────────────────────────────┘
+                          │        SessionManager                   │
+                          │   persists sessions → ./sessions/      │
+                          └───────────────────────────────────────┘
 
                           ┌───────────────────────────────────┐
-                          │     db/sessions_meta (SQLite)      │
+                          │     db/sessions_meta (SQLite)       │
                           │  sessionId → sessionFile mapping    │
                           └───────────────────────────────────┘
 ```
+
+## Context Compression Layers
+
+When token usage reaches thresholds, compression triggers automatically:
+
+| Layer | Threshold | Trigger | Action |
+|-------|-----------|---------|--------|
+| Micro Compact | 70% | Too many tool results | Prune old tool outputs, keep key info |
+| Context Collapse | 75% | Context too long | Compress middle dialogue into summary projection |
+| Auto Compact | 83.5% | Near limit | Built into pi-coding-agent, aggressive compression |
 
 ## Project Structure
 
 ```
 Krebs/
 ├── server/                    # Krebs gateway
-│   ├── index.ts              # Bun.serve() — HTTP + WebSocket bootstrap
-│   ├── session-service.ts     # Agent runtime factory + session lifecycle
+│   ├── index.ts             # Bun.serve() — HTTP + WebSocket bootstrap
+│   ├── session-service.ts   # Agent runtime factory + session lifecycle
 │   ├── event-subscription.ts # Forwards agent events over WebSocket
-│   ├── think-parser.ts        # Extract <think> tags from model output
-│   ├── ws-router.ts           # Route WS messages to handlers
-│   ├── sandbox/              # wasmtime sandbox (optional)
-│   │   ├── executor.ts       # wasmtime wrapper
-│   │   └── tools/bash.ts    # sandbox bash tool
-│   ├── handlers/              # Prompt / Stop / Auth / SwitchSession
-│   └── routes/               # /api/messages, /api/sessions, /api/auth
+│   ├── ws-router.ts        # Route WS messages to handlers
+│   ├── handlers/           # Prompt / Stop / Auth / SwitchSession
+│   ├── routes/              # /api/messages, /api/sessions, /api/auth
+│   └── services/
+│       └── compact/         # Context compression services
+│           ├── microCompact.ts    # Micro Compact
+│           └── contextCollapse.ts # Context Collapse
 │
-├── lib/                      # Shared utilities
-│   ├── logger.ts             # NORMAL / DEBUG logging
-│   ├── session-repository.ts  # SessionRepository interface + in-memory impl
-│   └── session-transcript.ts  # Extract content from agent responses
+├── .pi/                     # Pi Agent extensions
+│   └── extensions/
+│       └── context/         # Context compression hook
 │
-├── tools/                    # Tool system
-│   ├── lua-runtime.ts        # Lua 5.4 VM (Wasmoon)
+├── lib/                     # Shared utilities
+│   ├── logger.ts           # NORMAL / DEBUG logging
+│   ├── session-repository.ts # SessionRepository interface + in-memory impl
+│   └── session-transcript.ts # Extract content from agent responses
+│
+├── tools/                   # Tool system
+│   ├── lua-runtime.ts      # Lua 5.4 VM (Wasmoon)
 │   ├── lua-tools-registry.ts # Auto-load *.lua from lua-tools/
-│   └── lua-exec.ts          # Executes a named Lua tool
+│   └── lua-exec.ts        # Execute named Lua tools
 │
-├── lua-tools/                # 9 Lua scripts — each becomes a tool the agent can call
+├── lua-tools/               # 9 Lua scripts
 │   ├── file-read.lua
 │   ├── file-write.lua
-│   ├── json-encode.lua
 │   └── ... (datetime, string, math utilities)
 │
-├── skills/                   # 7 skills the agent reads in context
+├── skills/                  # 7 skills
 │   ├── web-search-tool/
 │   ├── json-output-optimizer/
 │   ├── resume-optimizer/
-│   └── ... (no-useeffect, simpleman, etc.)
+│   └── ...
 │
 ├── frontend/
-│   ├── chat.html             # HTML shell + styles
-│   └── chat.tsx              # React 19 app (WS client + Markdown renderer)
+│   ├── chat.html          # HTML shell + styles
+│   └── chat.tsx           # React 19 app
 │
 ├── db/
-│   └── index.ts              # SQLite — sessionId → sessionFile mapping
-│
-├── wasm/                      # wasmtime + coreutils
-│   ├── bin/wasmtime          # v45.0.1
-│   └── coreutils/coreutils.wasm
+│   └── index.ts           # SQLite
 │
 └── prompts/
-    └── index.ts              # Agent system prompt (Chinese)
+    └── index.ts           # Agent system prompt (Chinese)
 ```
-
-## Sandbox (Optional)
-
-Enable with `createRuntime(sessionId, sessionPath, true)`.
-
-**Read-write separation**:
-- **Read commands** (`ls`, `cat`, `grep`, etc.) → passthrough to native bash
-- **Write commands** (`echo`, `mkdir`, `rm`, etc.) → sandbox via wasmtime + coreutils
-
-**Security**: Write operations are restricted to `cwd` via wasmtime `--dir` flag.
-
-See [docs/sandbox-wasmtime.md](docs/sandbox-wasmtime.md) for details.
 
 ## HTTP API
 
-Requires `Authorization: Bearer <token>` — token is printed to console on first start and saved to `.env`.
+Requires `Authorization: Bearer <token>` — token printed to console on first start and saved to `.env`.
 
 ### Send a message
 
 ```bash
-curl -X POST http://localhost:3000/api/messages \
+curl -X POST http://localhost:3333/api/messages \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"message": "Write a Python quicksort"}'
+  -d '{"message": "Help me plan a trip to Japan"}'
 ```
 
 Returns `{sessionId, response, generatedContent}`.
@@ -176,24 +172,24 @@ Returns `{sessionId, response, generatedContent}`.
 ### Resume a session
 
 ```bash
-curl -X POST http://localhost:3000/api/messages \
+curl -X POST http://localhost:3333/api/messages \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"message": "Add tests", "sessionId": "session_xxx"}'
+  -d '{"message": "Continue", "sessionId": "session_xxx"}'
 ```
 
 ### Session management
 
 ```bash
-curl http://localhost:3000/api/sessions/list -H "Authorization: Bearer $TOKEN"
-curl http://localhost:3000/api/sessions/:sessionId -H "Authorization: Bearer $TOKEN"
-curl -X DELETE http://localhost:3000/api/sessions/:sessionId -H "Authorization: Bearer $TOKEN"
+curl http://localhost:3333/api/sessions/list -H "Authorization: Bearer $TOKEN"
+curl http://localhost:3333/api/sessions/:sessionId -H "Authorization: Bearer $TOKEN"
+curl -X DELETE http://localhost:3333/api/sessions/:sessionId -H "Authorization: Bearer $TOKEN"
 ```
 
 ## WebSocket API
 
 ```javascript
-const ws = new WebSocket("ws://localhost:3000/ws");
+const ws = new WebSocket("ws://localhost:3333/ws");
 ws.onopen = () => ws.send(JSON.stringify({ type: "auth" }));
 ```
 
@@ -208,7 +204,7 @@ ws.send(JSON.stringify({ type: "switch_session", sessionId: "..." }));
 Receive events:
 
 | Event | When |
-|-------|------|
+|--------|------|
 | `connected` | Connection open |
 | `text_delta` | Streaming token from agent |
 | `think_block` | `<think>` tag content |
@@ -219,16 +215,16 @@ Receive events:
 
 ## Web UI
 
-Open `http://localhost:3000/`. Connects to `/ws`, authenticates automatically. Features:
+Open `http://localhost:3333/`. Connects to `/ws`, authenticates automatically. Features:
 
 - Real-time token streaming
-- Markdown rendering with code highlighting
+- Markdown rendering
 - Session history sidebar
 - Stop / restart generation
 
 ## Lua Tools
 
-Drop a Lua script into `lua-tools/`, restart the server. The agent can call it by name.
+Drop a Lua script into `lua-tools/`, restart the server. Agent can call it by name:
 
 ```lua
 -- lua-tools/json-encode.lua
@@ -250,32 +246,35 @@ Bun · TypeScript · React 19 · bun:sqlite · WebSocket · Wasmoon (Lua 5.4)
 
 ---
 
-### AI 网关 — 聊天界面 + HTTP + WebSocket
+### AI 网关 — 通用智能助手
 
-自托管 AI 编程网关，内置**Agent**作为核心。Agent 维护会话上下文、执行工具、调用技能——Krebs 只负责把 Agent 通过 HTTP 和 WebSocket 暴露出来。
+自托管 AI 网关，内置**通用 Agent** 作为核心。支持对话、任务执行、工具调用、上下文压缩。
+
+**不是编程工具，任何需要 AI 协助的任务都能用。**
 
 ## 特性
 
-- **内置 Agent** — 有状态的编程 Agent，请求之间保持记忆
-- **浏览器界面** — 实时聊天，Markdown 渲染，代码高亮。无需账号，无需外部服务
-- **HTTP API** — 一次 `POST /api/messages` 请求，适合 CI/CD、脚本、工具集成
+- **通用 Agent** — 有状态的 AI 助手，支持多轮对话、工具执行、技能调用
+- **上下文压缩** — 智能压缩上下文，突破 token 限制（通过 pi-coding-agent）
+  - Micro Compact (70%): 工具结果精简
+  - Context Collapse (75%): 深层对话摘要为投影
+  - Auto Compact (83.5%): 内置在 pi-coding-agent，接近上限时激进压缩
+- **浏览器界面** — 实时聊天，Markdown 渲染，无需账号
+- **HTTP API** — 一次 `POST /api/messages`，适合 CI/CD、脚本、工具集成
 - **WebSocket API** — 实时流式返回 token 和工具执行事件
 - **会话持久化** — 通过 `sessionId` 随时恢复历史对话
-- **工具执行** — Agent 在 `custom/` 中读写文件、执行命令
-- **沙箱** — 可选的 wasmtime + coreutils 沙箱（读写分离）
-- **Lua 工具** — 将 `.lua` 文件放入 `lua-tools/`，Agent 可立即调用（共 9 个内置）
-- **技能系统** — 7 个内置技能，Agent 在相关场景下自动读取使用（搜索、JSON 校验、简历优化等）
 - **多模型** — 改一个环境变量即可切换 DeepSeek / Claude
+- **沙箱** — 可选的 wasmtime + coreutils 沙箱（读写分离）
+- **Lua 工具** — 放一个 `.lua` 文件到 `lua-tools/`，Agent 立即可用（共 9 个内置）
+- **技能系统** — 7 个内置技能，Agent 在相关场景下自动读取
 
 ## 快速开始
 
 ```bash
 bun install
-
-export DEEPSEEK_API_KEY=your_key    # 或设置 ANTHROPIC_API_KEY
-
+export DEEPSEEK_API_KEY=your_key
 bun run server/index.ts
-open http://localhost:3000
+open http://localhost:3333
 ```
 
 ## 环境变量
@@ -284,122 +283,73 @@ open http://localhost:3000
 |------|--------|------|
 | `DEEPSEEK_API_KEY` | — | DeepSeek API key（推荐） |
 | `ANTHROPIC_API_KEY` | — | 备选：Anthropic API key |
-| `PORT` | `3000` | HTTP/WebSocket 端口 |
-| `MODEL_PROVIDER` | `deepseek` | `deepseek` 或 `anthropic` |
+| `PORT` | `3333` | HTTP/WebSocket 端口 |
+| `MODEL_PROVIDER` | `deepseek` | `deepseek`、`anthropic` 或 `ollama` |
 | `MODEL_BASE_URL` | `https://api.deepseek.com/v1` | 自定义模型端点 |
 | `MODEL_ID` | `deepseek-chat` | 模型名称 |
 | `SESSION_TIMEOUT_MS` | `480000` | Agent 最大运行时间（8 分钟） |
 
-## 架构
+## 上下文压缩层级
 
-```
-                     浏览器              HTTP 客户端             脚本
-                          │                   │                    │
-                     ┌────▼────┐       ┌────▼────┐        ┌────▼────┐
-                     │   Web   │       │   HTTP  │        │   WS    │
-                     │   UI    │       │   API   │        │  Client │
-                     └────┬────┘       └────┬────┘        └────┬────┘
-                          │                 │                 │
-                          └─────────────────┼─────────────────┘
-                                            │
-                          ┌─────────────────▼─────────────────┐
-                          │          Krebs Gateway            │
-                          │                                      │
-                          │  ws-router        HTTP 路由         │
-                          │  ├── AuthHandler   /api/messages    │
-                          │  ├── PromptHandler /api/sessions     │
-                          │  ├── StopHandler   /api/auth         │
-                          │  └── SwitchSession                  │
-                          └─────────────────┬───────────────────┘
-                                            │
-                          ┌─────────────────▼───────────────────┐
-                          │              Agent                  │
-                          │                                      │
-                          │  session-service                     │
-                          │    创建和管理运行时                   │
-                          │                                      │
-                          │  event-subscription                   │
-                          │    将事件转发到 WebSocket            │
-                          │                                      │
-                          │  think-parser                         │
-                          │    提取模型输出中的 <think> 标签      │
-                          │                                      │
-                          │  tools/  +  lua-tools/  +  skills/  │
-                          │  bash     9 个 Lua 脚本     7 个技能  │
-                          └─────────────────┬───────────────────┘
-                                            │
-                          ┌─────────────────▼───────────────────┐
-                          │        SessionManager               │
-                          │   持久化会话 → ./sessions/         │
-                          └───────────────────────────────────┘
+当 token 用量达到阈值时，自动触发压缩：
 
-                          ┌───────────────────────────────────┐
-                          │     db/sessions_meta (SQLite)      │
-                          │  sessionId → sessionFile 映射       │
-                          └───────────────────────────────────┘
-```
+| 层级 | 阈值 | 触发条件 | 动作 |
+|------|------|---------|------|
+| Micro Compact | 70% | 工具结果过多 | 精简旧工具输出，保留关键信息 |
+| Context Collapse | 75% | 上下文过长 | 将中间对话压缩为摘要投影 |
+| Auto Compact | 83.5% | 接近上限 | 内置在 pi-coding-agent，接近限制时激进压缩 |
 
 ## 项目结构
 
 ```
 Krebs/
 ├── server/                    # Krebs 网关
-│   ├── index.ts              # Bun.serve() — HTTP + WebSocket 启动
-│   ├── session-service.ts     # Agent runtime 工厂 + 会话生命周期
+│   ├── index.ts             # Bun.serve() — HTTP + WebSocket 启动
+│   ├── session-service.ts   # Agent runtime 工厂 + 会话生命周期
 │   ├── event-subscription.ts # 将 Agent 事件转发到 WebSocket
-│   ├── think-parser.ts        # 从模型输出中提取 <think> 标签
-│   ├── ws-router.ts           # WS 消息路由到各 handler
-│   ├── handlers/              # Prompt / Stop / Auth / SwitchSession
-│   └── routes/               # /api/messages, /api/sessions, /api/auth
+│   ├── ws-router.ts        # WS 消息路由到各 handler
+│   ├── handlers/           # Prompt / Stop / Auth / SwitchSession
+│   ├── routes/             # /api/messages, /api/sessions, /api/auth
+│   └── services/
+│       └── compact/         # 上下文压缩服务
+│           ├── microCompact.ts    # Micro Compact
+│           └── contextCollapse.ts # Context Collapse
 │
-├── lib/                      # 共享工具
-│   ├── logger.ts             # NORMAL / DEBUG 两种日志模式
-│   ├── session-repository.ts  # SessionRepository 接口 + 内存实现
-│   └── session-transcript.ts  # 从 Agent 响应中提取内容
+├── .pi/                     # Pi Agent 扩展
+│   └── extensions/
+│       └── context/         # 上下文压缩 hook
 │
-├── tools/                    # 工具系统
-│   ├── lua-runtime.ts        # Lua 5.4 虚拟机（Wasmoon）
+├── lib/                     # 共享工具
+│   ├── logger.ts           # NORMAL / DEBUG 两种日志模式
+│   ├── session-repository.ts # SessionRepository 接口 + 内存实现
+│   └── session-transcript.ts # 从 Agent 响应中提取内容
+│
+├── tools/                   # 工具系统
+│   ├── lua-runtime.ts      # Lua 5.4 虚拟机（Wasmoon）
 │   ├── lua-tools-registry.ts # 自动加载 lua-tools/ 下所有 *.lua
-│   └── lua-exec.ts          # 执行命名的 Lua 工具
+│   └── lua-exec.ts        # 执行命名的 Lua 工具
 │
-├── lua-tools/                # 9 个 Lua 脚本 — 每个都成为 Agent 可调用的工具
+├── lua-tools/               # 9 个 Lua 脚本
 │   ├── file-read.lua
 │   ├── file-write.lua
-│   ├── json-encode.lua
-│   └── ...（时间、字符串、数学工具）
+│   └── ...（时间、字符串、数学等）
 │
-├── skills/                   # 7 个技能，Agent 在相关场景下自动读取
+├── skills/                  # 7 个技能
 │   ├── web-search-tool/
 │   ├── json-output-optimizer/
 │   ├── resume-optimizer/
-│   └── ...（no-useeffect, simpleman 等）
+│   └── ...
 │
 ├── frontend/
-│   ├── chat.html             # HTML 壳 + 样式
-│   └── chat.tsx              # React 19 应用（WS 客户端 + Markdown 渲染）
+│   ├── chat.html          # HTML 壳 + 样式
+│   └── chat.tsx           # React 19 应用
 │
 ├── db/
-│   └── index.ts              # SQLite — sessionId → sessionFile 映射
-│
-├── wasm/                      # wasmtime + coreutils
-│   ├── bin/wasmtime          # v45.0.1
-│   └── coreutils/coreutils.wasm
+│   └── index.ts           # SQLite
 │
 └── prompts/
-    └── index.ts              # Agent system prompt（中文）
+    └── index.ts           # Agent system prompt（中文）
 ```
-
-## 沙箱（可选）
-
-启用方式：`createRuntime(sessionId, sessionPath, true)`
-
-**读写分离**：
-- **读命令**（`ls`, `cat`, `grep` 等）→ 透传到原生 bash
-- **写命令**（`echo`, `mkdir`, `rm` 等）→ 通过 wasmtime + coreutils 沙箱执行
-
-**安全性**：写操作通过 wasmtime `--dir` 限制在 `cwd` 目录。
-
-详见 [docs/sandbox-wasmtime.md](docs/sandbox-wasmtime.md)。
 
 ## HTTP API
 
@@ -408,10 +358,10 @@ Krebs/
 ### 发送消息
 
 ```bash
-curl -X POST http://localhost:3000/api/messages \
+curl -X POST http://localhost:3333/api/messages \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"message": "写一个 Python 快速排序"}'
+  -d '{"message": "帮我规划一次日本旅行"}'
 ```
 
 返回 `{sessionId, response, generatedContent}`。
@@ -419,24 +369,24 @@ curl -X POST http://localhost:3000/api/messages \
 ### 恢复会话
 
 ```bash
-curl -X POST http://localhost:3000/api/messages \
+curl -X POST http://localhost:3333/api/messages \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"message": "加上测试", "sessionId": "session_xxx"}'
+  -d '{"message": "继续", "sessionId": "session_xxx"}'
 ```
 
 ### 会话管理
 
 ```bash
-curl http://localhost:3000/api/sessions/list -H "Authorization: Bearer $TOKEN"
-curl http://localhost:3000/api/sessions/:sessionId -H "Authorization: Bearer $TOKEN"
-curl -X DELETE http://localhost:3000/api/sessions/:sessionId -H "Authorization: Bearer $TOKEN"
+curl http://localhost:3333/api/sessions/list -H "Authorization: Bearer $TOKEN"
+curl http://localhost:3333/api/sessions/:sessionId -H "Authorization: Bearer $TOKEN"
+curl -X DELETE http://localhost:3333/api/sessions/:sessionId -H "Authorization: Bearer $TOKEN"
 ```
 
 ## WebSocket API
 
 ```javascript
-const ws = new WebSocket("ws://localhost:3000/ws");
+const ws = new WebSocket("ws://localhost:3333/ws");
 ws.onopen = () => ws.send(JSON.stringify({ type: "auth" }));
 ```
 
@@ -462,10 +412,10 @@ ws.send(JSON.stringify({ type: "switch_session", sessionId: "..." }));
 
 ## Web UI
 
-打开 `http://localhost:3000/`。自动连接 `/ws` 并认证。功能：
+打开 `http://localhost:3333/`。自动连接 `/ws` 并认证。功能：
 
 - 实时 token 流式输出
-- Markdown 渲染 + 代码高亮
+- Markdown 渲染
 - 会话历史侧边栏
 - 停止 / 重新生成
 
