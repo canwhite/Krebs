@@ -41,6 +41,15 @@ export async function readMemory(cwd: string): Promise<string> {
   return DEFAULT_HEADER;
 }
 
+// 同步读取函数，用于 before_agent_start hook
+export function readMemorySync(cwd: string): string {
+  const path = join(cwd, MEMORY_FILE_NAME);
+  if (existsSync(path)) {
+    return readFileSync(path, "utf-8");
+  }
+  return "";
+}
+
 export async function appendMemory(cwd: string, entry: MemoryEntry): Promise<void> {
   const path = join(cwd, MEMORY_FILE_NAME);
 
