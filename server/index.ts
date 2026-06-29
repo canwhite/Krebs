@@ -64,7 +64,7 @@ async function initLuaTools() {
 }
 
 // ==================== Constants ====================
-const PORT = process.env.PORT ? parseInt(process.env.PORT ?? "3000", 10) : 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT ?? "3333", 10) : 3333;
 
 function getContentType(filePath: string): string {
   const ext = filePath.split(".").pop();
