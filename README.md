@@ -21,18 +21,47 @@
 | 🔧 **Tools & Lua** | Drop a `.lua` in `lua-tools/`, agent can call it immediately | |
 | 🧩 **Skills** | 7 built-in skills the agent reads in relevant contexts | |
 | 🔄 **Multi-Model** | Switch between DeepSeek / Claude with one env var | |
+| 🏖️ **Sandbox** | WASM-based write command sandbox (wasmtime + coreutils) | |
+| 🧠 **Memory** | Two-phase memory: 50% trigger consolidation, session start injection | |
 
 ### Context Compression Layers
 
 ```
 Token Usage
     │
-    ├── 70% ─── Micro Compact ────── Prune old tool outputs
+    ├── 50% ─── Memory ───────────── Consolidate to MEMORY.md
+    │
+    ├── 70% ─── Micro Compact ───── Prune old tool outputs
     │
     ├── 75% ─── Context Collapse ── Summarize dialogue to projection
     │
     └── 83.5% ─ Auto Compact ────── Built into pi-coding-agent
 ```
+
+### Sandbox (Write Command Isolation)
+
+Write commands execute in a WASM sandbox via `wasmtime` + `coreutils.wasm`:
+
+| Type | Commands | Routing |
+|:-----|:---------|:-------|
+| Read | `ls`, `cat`, `grep`, `find` | Passthrough to bash |
+| Write | `echo`, `mkdir`, `rm`, `cp`, `mv` | WASM sandbox |
+
+- Sandbox restricts file system access to `cwd` via `--dir` flag
+- Read commands bypass sandbox for full shell capabilities
+- Only simple commands supported (no pipes, redirects, or chaining)
+
+### Memory (Two-Phase Consolidation)
+
+```
+50% Token ──► LLM Summarize ──► MEMORY.md (append)
+
+Session Start ──► Read MEMORY.md ──► Inject into systemPrompt
+```
+
+- **Write Phase**: At 50% token usage, LLM generates a summary of recent messages → appends to `MEMORY.md`
+- **Read Phase**: On session start, `MEMORY.md` content is injected into agent's system prompt
+- **Rollback**: Sessions can invalidate prior consolidations via session entries
 
 ---
 
@@ -89,8 +118,13 @@ open http://localhost:3333
                               │  session-service                      │
                               │    creates / manages runtime          │
                               │                                       │
-                              │  .pi/extensions/context/               │
-                              │    └── Context Compression           │
+                              │  .pi/extensions/                       │
+                              │    ├── context/ (Compression)         │
+                              │    ├── memory/ (Consolidation 50%)   │
+                              │    └── memory-context/ (Injection)   │
+                              │                                       │
+                              │  server/sandbox/                       │
+                              │    └── wasmtime + coreutils.wasm     │
                               │                                       │
                               │  event-subscription                   │
                               │    forwards events → WebSocket        │
@@ -118,6 +152,7 @@ When token usage reaches thresholds, compression triggers automatically:
 
 | Layer | Threshold | Trigger | Action |
 |:------|:----------|:--------|:-------|
+| Memory | 50% | Token budget half-used | LLM summarizes recent messages → `MEMORY.md` |
 | Micro Compact | 70% | Too many tool results | Prune old tool outputs, keep key info |
 | Context Collapse | 75% | Context too long | Compress middle dialogue into summary projection |
 | Auto Compact | 83.5% | Near limit | Built into pi-coding-agent, aggressive compression |
@@ -235,11 +270,23 @@ Krebs/
 │   ├── event-subscription.ts # Events → WebSocket
 │   ├── ws-router.ts         # WS message routing
 │   ├── handlers/            # Prompt / Stop / Auth / SwitchSession
-│   └── services/compact/    # Context compression
-│       ├── microCompact.ts
-│       └── contextCollapse.ts
+│   ├── sandbox/             # WASM sandbox for write commands
+│   │   ├── executor.ts      # wasmtime + coreutils runner
+│   │   └── tools/bash.ts    # Sandbox bash tool
+│   └── services/
+│       ├── compact/          # Context compression
+│       │   ├── microCompact.ts
+│       │   └── contextCollapse.ts
+│       └── memory/           # Memory consolidation
+│           ├── engine.ts     # LLM summary generation
+│           ├── storage.ts    # MEMORY.md read/write
+│           ├── llm.ts       # LLM calls
+│           └── types.ts     # Constants & types
 │
-├── .pi/extensions/context/  # Compression hooks
+├── .pi/extensions/          # pi-coding-agent hooks
+│   ├── context/             # Compression hooks
+│   ├── memory/              # Memory consolidation (50% trigger)
+│   └── memory-context/      # Memory injection (session start)
 │
 ├── lib/                     # Shared utilities
 │
@@ -253,6 +300,8 @@ Krebs/
 ├── frontend/                # React 19 app
 │
 ├── db/                      # SQLite
+│
+├── wasm/                    # wasmtime + coreutils.wasm
 │
 └── prompts/                # System prompt
 ```
