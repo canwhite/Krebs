@@ -2,7 +2,7 @@
 
 ## Context
 
-用户在25%、50%、73% token阈值时，希望系统自动：
+用户在25%、40%、55% token阈值时，希望系统自动：
 1. 总结核心目标和key metrics（用户问题+AI回复）
 2. 检测最近20条context是否偏离核心目标
 3. 如偏离严重，通过注入用户消息拉回正轨
@@ -19,8 +19,9 @@
 server/services/goal-constraint/
 ├── index.ts              # Main exports
 ├── engine.ts             # GoalConstraintEngine (orchestrator)
-├── llm.ts               # Goal extraction via Ollama chat
-├── embedding.ts          # Semantic embeddings via Ollama nomic-embed-text
+├── llm.ts               # Goal extraction via LLM
+├── embedding.ts          # Memlight BM25-based keyword extraction + scoring
+├── semantic.ts           # Drift detection using BM25
 ├── storage.ts            # GoalStorage (SQLite persistence)
 ├── types.ts              # TypeScript interfaces + constants
 
@@ -44,8 +45,8 @@ server/services/goal-constraint/
 
 ### Issue 3: Token-Frequency Embedding is Semantically Weak
 **Risk**: "修复bug" and "引入bug" have similar tokens but opposite meaning
-**Mitigation**: Use keyword presence/absence as primary signal; keep embedding as secondary; tune threshold lower (0.5)
-**Status**: ⚠️ Acknowledged - embedding is辅助信号
+**Mitigation**: Use keyword presence/absence as primary signal; keep BM25 as secondary; tune threshold lower (0.5)
+**Status**: ✅ RESOLVED - Replaced with Memlight (BM25) keyword scoring, keyword is primary signal
 
 ### Issue 4: Memory Leak in Session State Map
 **Risk**: `engines` Map grows unbounded
@@ -112,17 +113,17 @@ NEW THRESHOLDS: 25%, 40%, 55%
 **Decision**: goal-constraint should NOT modify the messages array it returns, only prepend correction via event.messages.unshift(). The return value modifications happen after all extensions run.
 
 ### Issue 12: Shared State Between Mechanisms
-**Risk**: If goal-constraint at 50% and contextCollapse at 75% both modify context, state may diverge
+**Risk**: If goal-constraint at 40% and contextCollapse at 75% both modify context, state may diverge
 **Mitigation**: Both read from same `ctx.getContextUsage()` and append to same session
 **Status**: ✅ Should be OK - they operate at different thresholds
 
 ### Issue 13: Message Filtering Uses Unsafe Any Cast
 **Risk**: Using `(m as any).id` to filter correction messages is type-unsafe
 **Problem**: Standard `Message` type (UserMessage | AssistantMessage | ToolResultMessage) has no `id` field
-**Mitigation**: 
+**Mitigation**:
 - Use content-based filtering: check if `content.includes("[GOAL CONSTRAINT]")`
 - Or extend the Message type via declaration merging
-**Status**: ⚠️ Need to decide filtering approach
+**Status**: ✅ RESOLVED - Use content-based filtering (Issue 16)
 
 ### Issue 14: SessionShutdown Event Name
 **Risk**: `session_shutdown` event may not exist or have different name
@@ -178,50 +179,7 @@ function isCorrectionMessage(msg: AgentMessage): boolean {
 LLM调用实现方案：
 ```typescript
 // server/services/goal-constraint/llm.ts
-export async function extractGoalsWithLLM(
-  messages: AgentMessage[],
-  ctx: ExtensionContext
-): Promise<{ goals: CoreGoal[]; metrics: KeyMetric[] }> {
-  const model = ctx.model;
-  if (!model) return extractWithHeuristics(messages);
-
-  const apiKey = await ctx.modelRegistry.getApiKeyForProvider(model.provider);
-  if (!apiKey) return extractWithHeuristics(messages);
-
-  const prompt = buildGoalExtractionPrompt(messages);
-
-  try {
-    const response = await fetch(`${model.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: model.id,
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 500
-      })
-    });
-
-    const data = await response.json();
-    const content = data.choices[0]?.message?.content;
-    return parseLLMResponse(content);
-  } catch (error) {
-    console.warn('[GoalConstraint] LLM call failed, falling back to heuristics');
-    return extractWithHeuristics(messages);
-  }
-}
-
-function buildGoalExtractionPrompt(messages: AgentMessage[]): string {
-  const userMsgs = messages.filter(m => m.role === 'user')
-    .map(m => typeof m.content === 'string' ? m.content : JSON.stringify(m.content))
-    .join('\n---\n');
-
-  return `从以下用户消息中提取核心目标和关键指标。
-
-用户消息：
-${userMsgs}
+const GOAL_EXTRACTION_PROMPT = `从以下对话中提取核心目标和关键指标。
 
 请以JSON格式返回：
 {
@@ -231,67 +189,106 @@ ${userMsgs}
 
 要求：
 - goals: 识别用户真正想要完成的任务（最多5个）
-- metrics: 识别可量化的指标（如文件数、错误数、完成度等）
-- 用中文回答`;
-}
+- metrics: 识别可量化的指标（如文件数、错误数、代码行数等）
+- 用中文回答
+- 只返回JSON，不要其他内容`;
+
+// 实现见 llm.ts 第674-725行
 ```
 
 **Trade-off**: LLM调用有延迟和成本，但提高了goal提取质量。fallback到heuristics保证最终可用性。
 
 ---
 
-### Issue 18: Embedding Implementation - Ollama ⚠️ NEW
+### Issue 18: Embedding Implementation - Memlight (BM25-based) ⚠️ UPDATED
 
-**Decision**: Use Ollama `nomic-embed-text` for semantic embeddings
+**Decision**: Use Memlight (BM25 keyword matching) instead of Ollama embeddings
 
-**Why Ollama**:
-- Local, no API cost
-- `nomic-embed-text` is high quality (137M params, F16)
-- Same 768-dim space for both goal embedding and drift comparison
+**Why Memlight**:
+- No external service dependency (unlike Ollama)
+- Lightweight, fast keyword-based retrieval
+- Already implemented and tested in session-history-rag
+- Avoids 768-dim vector overhead
 
-**Ollama Discovery**:
-```
-Model: nomic-embed-text:latest
-Embedding length: 768
-Endpoint: POST http://localhost:11434/api/embeddings
-```
-
-**Implementation**:
+**Implementation** (reuses session-history-rag components):
 ```typescript
 // server/services/goal-constraint/embedding.ts
-const OLLAMA_BASE = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
-const EMBEDDING_MODEL = "nomic-embed-text";
+// Now delegates to BM25 from session-history-rag
+import { bm25Search, preprocessForQuery } from './bm25.js';
+import { buildIndex } from './indexer.js';
 
-export async function getEmbedding(text: string): Promise<number[]> {
-  const response = await fetch(`${OLLAMA_BASE}/api/embeddings`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: EMBEDDING_MODEL,
-      prompt: text
-    })
-  });
+const K1 = 1.5;
+const B = 0.75;
 
-  if (!response.ok) {
-    throw new Error(`Ollama API error: ${response.status}`);
-  }
-
-  const data = await response.json();
-  return data.embedding; // 768-dim vector
+// For goal embedding, we store keywords instead of vectors
+export interface GoalKeywords {
+  keywords: string[];
+  tokenCount: number;
 }
 
-export function cosineSimilarity(a: number[], b: number[]): number {
-  let dot = 0, normA = 0, normB = 0;
-  for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
+// Extract keywords from goal text (reuses session-history-rag tokenizer)
+export async function extractGoalKeywords(text: string): Promise<GoalKeywords> {
+  const normalized = text.normalize('NFC').replace(/[^\p{L}\p{N}\s]/gu, ' ').toLowerCase();
+  const tokens = preprocessForQuery(normalized);
+  return {
+    keywords: tokens,
+    tokenCount: tokens.length
+  };
+}
+
+// Build a mini index for goals (in-memory, not persisted)
+export function buildGoalIndex(goals: { id: string; keywords: string[] }[]): Map<string, GoalIndexEntry> {
+  const entries = new Map();
+  for (const goal of goals) {
+    entries.set(goal.id, {
+      goalId: goal.id,
+      keywords: goal.keywords,
+      tokenCount: goal.keywords.length
+    });
   }
-  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+  return entries;
+}
+
+// Score recent messages against goals using BM25
+export function scoreGoalDrift(
+  messageTokens: string[],
+  goalIndex: Map<string, GoalIndexEntry>,
+  avgGoalTokenCount: number
+): Map<string, number> {
+  const scores = new Map();
+  const N = goalIndex.size;
+  if (N === 0) return scores;
+
+  // Compute document frequency for each message token across goals
+  const df = new Map<string, number>();
+  for (const qt of messageTokens) {
+    let count = 0;
+    for (const entry of goalIndex.values()) {
+      if (entry.keywords.includes(qt)) count++;
+    }
+    df.set(qt, count);
+  }
+
+  for (const [goalId, entry] of goalIndex) {
+    let score = 0;
+    for (const qt of messageTokens) {
+      const tf = entry.keywords.filter(t => t === qt).length;
+      if (tf === 0) continue;
+
+      const d = df.get(qt) ?? 0;
+      const idf = Math.log((N - d + 0.5) / (d + 0.5) + 1);
+      const tfNorm = (tf * (K1 + 1)) / (tf + K1 * (1 - B + B * entry.tokenCount / (avgGoalTokenCount || 1)));
+
+      score += idf * tfNorm;
+    }
+    scores.set(goalId, score);
+  }
+
+  return scores;
 }
 ```
 
-**Note**: Ollama URL now configurable via `OLLAMA_BASE_URL` environment variable.
+**Note**: Uses the same BM25 algorithm as session-history-rag, but for in-memory goal scoring. No external Ollama service required.
 
 ---
 
@@ -331,6 +328,137 @@ async function checkTokenThresholds(sessionId: string, usage: ContextUsage): Pro
 
 ---
 
+### Issue 20: detectDrift Implementation is Incomplete ⚠️ CRITICAL
+
+**Risk**: `engine.detectDrift()` returns hardcoded `hasDrifted: false` - drift detection never actually triggers
+
+**Current State** (engine.ts line 561-563):
+```typescript
+// TODO: 实现实际的漂移检测逻辑
+// 需要使用 semantic.ts 中的 SemanticAnalyzer 计算 hybrid score
+return { hasDrifted: false, semanticSimilarity: 1, keywordMatchRate: 1, hybridScore: 1, dominantGoal: null, details: "Not implemented" };
+```
+
+**Required Implementation**:
+1. Tokenize recent messages using `preprocessForQuery()`
+2. Build goal index using `buildGoalIndex()`
+3. Score using `scoreGoalDrift()`
+4. Calculate hybrid score with weights 0.4 BM25 + 0.6 keyword
+5. Return actual drift result
+
+**Status**: ❌ TODO - must implement before release
+
+---
+
+### Issue 21: recordCorrection Method Missing ⚠️ CRITICAL
+
+**Risk**: Extension calls `engine.recordCorrection()` but this method doesn't exist on `GoalConstraintEngine`
+
+**Location**: Extension line 847:
+```typescript
+engine.recordCorrection();
+state.correctionCooldownTurns = GOAL_CONSTRAINT_THRESHOLDS.CORRECTION_COOLDOWN_TURNS;
+```
+
+**Fix Required**: Add `recordCorrection()` method to `GoalConstraintEngine`:
+```typescript
+recordCorrection(): void {
+  this.lastCorrectionAt = Date.now();
+}
+```
+
+**Status**: ❌ TODO - must implement before release
+
+---
+
+### Issue 22: embedding.ts Import Paths are Wrong ⚠️ CRITICAL
+
+**Risk**: `embedding.ts` imports from `./bm25.js` and `./indexer.js` which don't exist in this module
+
+**Current (Wrong) Imports**:
+```typescript
+import { bm25Search, preprocessForQuery } from './bm25.js';
+import { buildIndex } from './indexer.js';
+```
+
+**Problem**: These should import from `session-history-rag`:
+```typescript
+import { bm25Search, preprocessForQuery } from '../../session-history/bm25.js';
+import { buildIndex } from '../../session-history/indexer.js';
+```
+
+Or if keeping local BM25, need to implement full `bm25.ts` and `indexer.ts` in goal-constraint module.
+
+**Status**: ❌ Need to fix import paths or implement local BM25
+
+---
+
+### Issue 23: semantic.ts Has No Implementation ⚠️ CRITICAL
+
+**Risk**: `semantic.ts` only shows class interface, no actual implementation provided
+
+**Current State** (line 498-513):
+```typescript
+export class SemanticAnalyzer {
+  extractKeywords(text: string): string[]      // top 20, stopword filtered
+  keywordMatchRate(text: string, keywords: string[]): number
+  calculateDriftScore(messageTokens: string[], coreGoals: CoreGoal[]): { bm25, keyword, hybrid }
+}
+```
+
+**Problem**: These methods are not implemented. The `embedding.ts` provides `extractGoalKeywords`, `buildGoalIndex`, `scoreGoalDrift`, but no `keywordMatchRate` function.
+
+**Required Implementation**:
+```typescript
+// In semantic.ts or embedding.ts
+export function keywordMatchRate(messageTokens: string[], goalKeywords: string[]): number {
+  if (messageTokens.length === 0 || goalKeywords.length === 0) return 0;
+  const matched = messageTokens.filter(t => goalKeywords.includes(t)).length;
+  return matched / goalKeywords.length;
+}
+```
+
+**Status**: ❌ Need to implement keywordMatchRate function
+
+---
+
+### Issue 24: DriftResult Field Naming Inconsistent ⚠️ MEDIUM
+
+**Risk**: `DriftResult` uses `semanticSimilarity` but updated algorithm uses `bm25Score`
+
+**Current types.ts**:
+```typescript
+export interface DriftResult {
+  hasDrifted: boolean;
+  semanticSimilarity: number;  // Old name
+  keywordMatchRate: number;
+  hybridScore: number;
+  dominantGoal: CoreGoal | null;
+  details: string;
+}
+```
+
+**Algorithm Update** (line 978):
+```
+RETURN { has_drift, best_bm25, best_keyword, best_hybrid, dominant_goal }
+```
+
+**Decision**: Rename `semanticSimilarity` to `bm25Score` for consistency:
+```typescript
+export interface DriftResult {
+  hasDrifted: boolean;
+  bm25Score: number;        // Renamed from semanticSimilarity
+  keywordMatchRate: number;
+  hybridScore: number;
+  dominantGoal: CoreGoal | null;
+  details: string;
+}
+```
+
+**Status**: ⚠️ Should update for consistency
+
+---
+
 ## Revised Thresholds
 
 **Original (Conflicts with contextCollapse at 75%)**:
@@ -358,8 +486,7 @@ Rationale:
 export interface CoreGoal {
   id: string;
   text: string;           // goal text from LLM extraction
-  keywords: string[];     // extracted keywords
-  embedding: number[];     // 768-dim Ollama nomic-embed-text vector
+  keywords: string[];     // extracted keywords (BM25-based)
   priority: number;
   createdAt: number;
 }
@@ -417,20 +544,19 @@ export const GOAL_CONSTRAINT_THRESHOLDS = {
 
 ### NEW: `server/services/goal-constraint/semantic.ts`
 
-核心算法：
-1. **Embedding**: Ollama nomic-embed-text → 768维向量
-2. **Keyword Extraction**: TF-IDF-like, 过滤stopwords, 取top20（主要信号）
+核心算法（基于BM25）：
+1. **Keyword Extraction**: TF-IDF-like, 过滤stopwords, 取top20（主要信号）
+2. **BM25 Scoring**: 使用 Memlight BM25 算法计算消息与目标的相似度
 3. **Keyword Match Rate**: `matched / total`
-4. **Hybrid Score**: `0.4 * semantic + 0.6 * keyword` (keyword权重更高)
+4. **Hybrid Score**: `0.4 * bm25 + 0.6 * keyword` (keyword权重更高)
 
 ```typescript
-// Now delegates to embedding.ts for Ollama embeddings
-import { getEmbedding, cosineSimilarity } from "./embedding.js";
+import { extractGoalKeywords, buildGoalIndex, scoreGoalDrift } from "./embedding.js";
 
 export class SemanticAnalyzer {
   extractKeywords(text: string): string[]      // top 20, stopword filtered
   keywordMatchRate(text: string, keywords: string[]): number
-  calculateHybridSimilarity(text, coreGoal): { semantic, keyword, hybrid }
+  calculateDriftScore(messageTokens: string[], coreGoals: CoreGoal[]): { bm25, keyword, hybrid }
 }
 ```
 
@@ -576,7 +702,7 @@ Please re-orient toward these objectives.`;
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { CoreGoal, KeyMetric } from "./types.js";
-import { getEmbedding } from "./embedding.js";
+import { extractGoalKeywords } from "./embedding.js";
 
 const GOAL_EXTRACTION_PROMPT = `从以下对话中提取核心目标和关键指标。
 
@@ -656,14 +782,13 @@ async function parseLLMResponse(
     const jsonStr = jsonMatch[1] || content;
     const parsed = JSON.parse(jsonStr);
 
-    // 并行获取所有goal的embedding
+    // 并行获取所有goal的keywords
     const goalPromises = (parsed.goals || []).slice(0, 5).map(async (text: string, i: number) => {
-      const embedding = await getEmbedding(text); // 使用Ollama获取embedding
+      const { keywords } = await extractGoalKeywords(text); // 使用BM25-based keyword extraction
       return {
         id: `goal_${Date.now()}_${i}`,
         text: text.substring(0, 200),
-        keywords: extractKeywordsFromText(text),
-        embedding,
+        keywords,
         priority: 1,
         createdAt: Date.now()
       };
@@ -697,13 +822,10 @@ export async function extractWithHeuristics(messages: AgentMessage[]): Promise<{
 
     if (key && !seen.has(key) && goals.length < 5) {
       seen.add(key);
-      // Fallback: 使用zero vector作为embedding
-      const embedding = new Array(768).fill(0);
       goals.push({
         id: `goal_${Date.now()}_${goals.length}`,
         text: text.substring(0, 200),
         keywords,
-        embedding,
         priority: 1,
         createdAt: Date.now()
       });
@@ -859,7 +981,7 @@ extensionFactories: [subagents as any, tasks as any, goalConstraintExtension as 
 
 ---
 
-## Drift Detection Algorithm (Updated)
+## Drift Detection Algorithm (Updated - BM25-based)
 
 ```
 FUNCTION DETECT_DRIFT(messages, summary):
@@ -877,16 +999,22 @@ FUNCTION DETECT_DRIFT(messages, summary):
   IF recent_text IS_EMPTY OR summary.coreGoals IS_EMPTY:
     RETURN NO_DRIFT
 
+  message_tokens = preprocessForQuery(recent_text)  // Memlight tokenization
+  goal_index = buildGoalIndex(summary.coreGoals)     // Build BM25 index from goals
+
+  // BM25 score is primary semantic signal
+  bm25_scores = scoreGoalDrift(message_tokens, goal_index, avgGoalTokenCount)
+
   FOR EACH goal IN summary.coreGoals:
-    // Keyword is primary signal (semantic embedding is weak)
-    keyword_rate = keyword_match_rate(recent_text, goal.keywords)
-    semantic = cosine_similarity(embed(recent_text), goal.embedding)
-    hybrid = 0.4 * semantic + 0.6 * keyword_rate  // keyword weighted higher
+    // Keyword is primary signal
+    keyword_rate = keyword_match_rate(message_tokens, goal.keywords)
+    bm25_score = bm25_scores.get(goal.id) ?? 0
+    hybrid = 0.4 * bm25_score + 0.6 * keyword_rate  // keyword weighted higher
 
     IF hybrid > best_hybrid:
       best_hybrid = hybrid
       best_keyword = keyword_rate
-      best_semantic = semantic
+      best_bm25 = bm25_score
       dominant_goal = goal
 
   has_drift = (
@@ -894,7 +1022,7 @@ FUNCTION DETECT_DRIFT(messages, summary):
     best_hybrid < 0.50
   )
 
-  RETURN { has_drift, best_semantic, best_keyword, best_hybrid, dominant_goal }
+  RETURN { has_drift, best_bm25, best_keyword, best_hybrid, dominant_goal }
 ```
 
 ---
@@ -971,12 +1099,17 @@ Session Start
 5. ~~Threshold calculation basis~~ - ✅ Verified - percent = tokens / contextWindow
 6. ~~Message filtering approach~~ - ✅ Solution - use content-based filtering
 7. ~~LLM调用能力~~ - ✅ Verified - 可通过ctx.model + ctx.modelRegistry.getApiKeyForProvider()实现
-8. ~~Embedding方案~~ - ✅ Verified - 使用Ollama nomic-embed-text (768-dim)
+8. ~~Embedding方案~~ - ✅ UPDATED - 使用Memlight (BM25) 替代Ollama embedding
 9. ~~Extension返回`{}` vs `{messages}`~~ - ✅ CRITICAL: 必须返回 `{ messages }` 否则修改不生效
 10. ~~getSessionState未定义~~ - ✅ 已补充完整定义
 11. ~~Engine接口不完整~~ - ✅ 已补充 getLatestSummary, canCheckDrift 等方法
-12. Ollama地址硬编码 - ✅ 已改为环境变量
+12. ~~Ollama地址硬编码~~ - ✅ RESOLVED - 不再使用Ollama，改用Memlight
 13. Threshold状态持久化 - ⚠️ 已添加Issue 19，使用storage检查替代
+14. detectDrift未实现 - ❌ Issue 20，漂移检测返回hardcoded false
+15. recordCorrection方法缺失 - ❌ Issue 21，Extension调用了不存在的方法
+16. embedding.ts导入路径错误 - ❌ Issue 22，应从session-history-rag导入
+17. semantic.ts无实现 - ❌ Issue 23，只有接口定义
+18. DriftResult字段命名不一致 - ⚠️ Issue 24，semanticSimilarity应改为bm25Score
 
 ---
 
@@ -1028,3 +1161,19 @@ Session Start
   - **UPDATED**: Ollama地址改为环境变量 `OLLAMA_BASE_URL`
   - **UPDATED**: `sessionStates` Map已添加到extension中
   - **VERIFIED**: `ContextEventResult`接口定义确认，返回`{ messages }`是正确的
+
+- 2026-06-29: 第七次审查 - Memlight替换 + 事前验尸
+  - **UPDATED**: Issue 18 - Ollama embedding替换为Memlight (BM25)
+  - **UPDATED**: Drift Detection Algorithm改用BM25 scoring
+  - **UPDATED**: Architecture描述更新，移除Ollama依赖
+  - **UPDATED**: Context阈值更新为25%, 40%, 55%
+  - **NEW**: 发现engine.ts中detectDrift尚未实现完整逻辑
+  - **NEW**: 发现engine.ts调用recordCorrection方法但未定义
+
+- 2026-06-29: 第八次审查 - 继续验尸
+  - **FIXED**: Issue 13状态更新为RESOLVED（通过Issue 16解决）
+  - **UPDATED**: Issue 12描述修正（50%→40%）
+  - **UPDATED**: Issue 17 LLM prompt描述简化，与实际llm.ts代码一致
+  - **NEW**: Issue 22 - embedding.ts导入路径错误
+  - **NEW**: Issue 23 - semantic.ts只有接口无实现
+  - **NEW**: Issue 24 - DriftResult字段semanticSimilarity应改为bm25Score

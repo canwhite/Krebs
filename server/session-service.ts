@@ -25,6 +25,7 @@ import tasks from "@tintinweb/pi-tasks/dist/index.js";
 import memoryExtension from "../.pi/extensions/memory/index.js";
 import contextExtension from "../.pi/extensions/context/index.js";
 import memoryContextExtension from "../.pi/extensions/memory-context/index.js";
+import sessionHistoryExtension from "../.pi/extensions/session-history-rag/index.js";
 import type { Model } from "@mariozechner/pi-ai";
 import { getModel } from "@mariozechner/pi-ai";
 import { join } from "path";
@@ -130,7 +131,7 @@ const createRuntimeFactory: CreateAgentSessionRuntimeFactory = async (
   const resourceLoader = new DefaultResourceLoader({
     cwd,
     agentDir: getAgentDir(),
-    extensionFactories: [subagents as any, tasks as any, memoryExtension as any, contextExtension as any, memoryContextExtension as any],
+    extensionFactories: [subagents as any, tasks as any, memoryExtension as any, contextExtension as any, memoryContextExtension as any, sessionHistoryExtension as any],
     skillsOverride: () => ({ skills, diagnostics: [] }),
     systemPromptOverride: () => systemPrompt,
     noPromptTemplates: true,
