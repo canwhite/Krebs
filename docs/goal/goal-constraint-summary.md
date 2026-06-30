@@ -47,6 +47,8 @@ LLM提取 → JSON { goals: ["目标1", "目标2"], metrics: [...] }
 hybrid = keywordWeight × bm25Score + semanticWeight × keywordMatchRate
 // keywordWeight=0.6, semanticWeight=0.4
 // 阈值: keyword<0.5 或 hybrid<0.5 则判定为漂移
+// keywordMatchRate = 命中的goal关键词数 / goal的关键词总数
+// bm25Score : 和 Session History RAG 一样的 BM25 公式，只是这次不是检索 session，而是用消息 tokens 检索 goal keywords：
 ```
 
 - **BM25 Score**：当前对话文本与目标 keywords 的 BM25 相似度
