@@ -23,17 +23,17 @@ AI 消息的 markdown 内容在 StreamingMarkdown 中渲染不正常（列表混
 ### 1. 服务器：新增 `extractCompleteContent` 工具函数
 
 ```ts
-// server.ts:817
-function extractCompleteContent(message: any): string {
+// lib/session-transcript.ts
+function extractFromTurnEvent(message: any): string {
   const textParts =
     message?.content
-      ?.filter((c: any) => c.type === "text" || c.type === "thinking")
-      .map((c: any) => (c.type === "thinking" ? c.thinking : c.text)) || [];
+      ?.filter((c: any) => c.type === "text")  // 只提取 text，不含 thinking
+      .map((c: any) => c.text) || [];
   return textParts.join("");
 }
 ```
 
-逻辑同现有 `getLastAssistantMessageFromFile`，但从内存中的 event.message 直接提取，无需文件 I/O。
+**注意**：`thinking` 类型不提取，因为 think 内容已在流式期间通过 `think_block` 事件单独创建为 `thinking` role 的消息，最终渲染时不应再出现在主消息中。
 
 ### 2. 服务器：修改 `turn_end` 事件处理
 

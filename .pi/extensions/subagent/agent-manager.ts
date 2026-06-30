@@ -6,7 +6,7 @@
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { AgentRecord, AgentOptions, SubagentEvent } from "./types.js";
 import { AgentQueue } from "./queue.js";
-import { createSubagentSession, handleSubagentEvent, buildSubagentPrompt } from "./agent-runner.js";
+import { createSubagentSession, startSubagentSession, handleSubagentEvent, buildSubagentPrompt } from "./agent-runner.js";
 
 // Session state keyed by parent sessionId
 interface SessionState {
@@ -63,7 +63,7 @@ export async function createAgent(
     ? buildSubagentPrompt(task, ctx, options ?? {})
     : task;
 
-  // Create session
+  // Create session (prompt NOT sent yet)
   const session = await createSubagentSession(prompt, type, cwd, options);
 
   // Create record
@@ -76,10 +76,18 @@ export async function createAgent(
     timeoutMs: options?.timeoutMs,
   };
 
-  // Subscribe to session events
+  // Subscribe to session events BEFORE sending prompt
   const unsubscribe = session.subscribe((event: any) => {
     const subagentEvent = event as SubagentEvent;
     handleSubagentEvent(subagentEvent, session, record);
+
+    // Clean up record on agent_end
+    if (subagentEvent.type === "agent_end") {
+      // Use setTimeout to avoid mutating records during iteration
+      setTimeout(() => {
+        onAgentComplete(parentSessionId, agentId);
+      }, 0);
+    }
   });
   record.unsubscribe = unsubscribe;
 
@@ -88,10 +96,11 @@ export async function createAgent(
 
   // Enqueue if at capacity, otherwise start immediately
   if (state.queue.size >= state.maxConcurrent) {
+    record.prompt = prompt;  // Store for when agent is dequeued
     state.queue.enqueue(agentId, record);
     record.status = "pending";
   } else {
-    startAgent(record);
+    startAgent(record, prompt);
   }
 
   return { agentId, status: record.status };
@@ -100,10 +109,10 @@ export async function createAgent(
 /**
  * Start executing an agent
  */
-function startAgent(record: AgentRecord): void {
+function startAgent(record: AgentRecord, prompt: string): void {
   record.status = "running";
-  // Session is already created and subscribed, just let it run
-  // The session.prompt() was called in createSubagentSession
+  // Now safe to send prompt - subscription is already set up
+  startSubagentSession(record.session, prompt, record.timeoutMs);
 }
 
 /**
@@ -217,7 +226,9 @@ function processQueue(state: SessionState): void {
   while (state.queue.size > 0 && state.records.size < state.maxConcurrent) {
     const next = state.queue.dequeue();
     if (next && state.records.has(next.id)) {
-      startAgent(next);
+      if (next.prompt) {
+        startAgent(next, next.prompt);
+      }
     }
   }
 }

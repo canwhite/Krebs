@@ -18,6 +18,7 @@ export interface AgentRecord {
   timeoutMs?: number;
   result?: AgentMessage[];
   unsubscribe?: () => void;
+  prompt?: string;  // Stored for queued agents
 }
 
 // Agent 配置选项

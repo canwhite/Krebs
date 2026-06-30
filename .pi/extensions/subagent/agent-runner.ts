@@ -130,15 +130,25 @@ export async function createSubagentSession(
 
   const session = result.session;
 
+  return session;
+}
+
+/**
+ * 启动 subagent session 并发送 prompt
+ * 注意: 调用者需要在调用此函数之前设置好事件订阅
+ */
+export function startSubagentSession(
+  session: AgentSession,
+  prompt: string,
+  timeoutMs?: number
+): void {
   // Start timeout if configured
-  if (mergedOptions.timeoutMs) {
-    startTimeout(session, mergedOptions.timeoutMs, session.sessionId);
+  if (timeoutMs) {
+    startTimeout(session, timeoutMs, session.sessionId);
   }
 
-  // Execute prompt
+  // Execute prompt - agent 开始执行
   session.prompt(prompt);
-
-  return session;
 }
 
 /**
@@ -163,6 +173,11 @@ export function handleSubagentEvent(
   session: AgentSession,
   record: AgentRecord
 ): void {
+  // Skip if already cancelled (abort in progress)
+  if (record.status === "cancelled") {
+    return;
+  }
+
   switch (event.type) {
     case "agent_start":
       record.status = "running";

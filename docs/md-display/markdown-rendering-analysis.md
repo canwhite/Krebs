@@ -249,17 +249,17 @@ textDeltas.push(rawDelta);  // 累积所有 delta
 
 **这是 bug**：如果 `message_end` 事件并发到达（服务器同时发送多个 `message_end`），第二个会设置 `isProcessingMessageEnd = true` 后立即又设回 false，第三个 `message_end` 仍然会通过检查并继续处理。
 
-#### 新发现2: extractFromTurnEvent 内容类型过滤
+#### 新发现2: extractFromTurnEvent 内容类型过滤（已修复）
 
 ```typescript
-// session-transcript.ts 第 81-85 行
+// lib/session-transcript.ts
 const textParts =
   message?.content
-    ?.filter((c: any) => c.type === "text" || c.type === "thinking")
-    .map((c: any) => (c.type === "thinking" ? c.thinking : c.text)) || [];
+    ?.filter((c: any) => c.type === "text")  // 不含 thinking
+    .map((c: any) => c.text) || [];
 ```
 
-**风险**：如果 event.message.content 的实际类型值与预期不符（如 `"type": "output"`），过滤后返回空字符串。但这是低概率问题。
+**原因**：think 内容在流式期间通过 `think_block` 事件单独创建为 `thinking` role 的消息，最终渲染时不应再出现在主消息中。如果 event.message.content 的实际类型值与预期不符（如 `"type": "output"`），过滤后返回空字符串。
 
 #### 新发现3: turn_end 触发时机不确定性
 
