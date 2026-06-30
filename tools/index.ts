@@ -4,7 +4,7 @@
  * 集中管理所有可用的 tools，便于维护和扩展
  */
 
-import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { luaExecTool } from "./lua-exec.js";
 
 export interface ToolConfig {

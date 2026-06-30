@@ -10,7 +10,7 @@
  * 6. 底层 JSONL 不变
  */
 
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { DEFAULT_CONTEXT_COLLAPSE_CONFIG, type ContextCollapseConfig } from "./types.js";
 
 export interface CompactBoundary {

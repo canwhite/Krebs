@@ -7,7 +7,11 @@
  * 3. Inject correction messages when drift is detected
  */
 
-import type { ExtensionAPI, ContextEventResult } from "@mariozechner/pi-coding-agent/dist/core/extensions/types.d.ts";
+import type { ExtensionAPI, ContextEvent } from "@earendil-works/pi-coding-agent";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+
+/** Context event result type (not re-exported from earendil-works pi-coding-agent) */
+type ContextEventResult = { messages?: AgentMessage[] };
 import { GoalConstraintEngine } from "../../../server/services/goal-constraint/engine.js";
 import { GOAL_CONSTRAINT_THRESHOLDS, type SessionState } from "../../../server/services/goal-constraint/types.js";
 import { goalStorage } from "../../../server/services/goal-constraint/storage.js";

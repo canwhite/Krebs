@@ -2,7 +2,7 @@
  * Self-Verification - LLM Verification Logic
  */
 
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { VerificationResult } from "./types.js";
 
 const VERIFICATION_PROMPT = `你是验证助手。检查 Agent 的回答是否解决了用户的问题。

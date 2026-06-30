@@ -6,7 +6,7 @@
  * - SqliteSessionRepository：基于 SQLite，管理持久化 session 元数据
  */
 
-import type { AgentSessionRuntime } from "@mariozechner/pi-coding-agent";
+import type { AgentSessionRuntime } from "@earendil-works/pi-coding-agent";
 
 // ==================== Interface ====================
 

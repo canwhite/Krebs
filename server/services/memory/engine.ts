@@ -4,8 +4,8 @@
  * Core consolidation logic
  */
 
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import type { ExtensionContext, ExtensionAPI } from "@mariozechner/pi-coding-agent/dist/core/extensions/types.d.ts";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { ExtensionContext, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
   type ConsolidationState,
   type ConsolidationResult,

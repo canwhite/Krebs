@@ -4,7 +4,7 @@
  * Hooks into context event to trigger memory consolidation at 50% token usage
  */
 
-import type { ExtensionAPI, ContextEvent } from "@mariozechner/pi-coding-agent/dist/core/extensions/types.d.ts";
+import type { ExtensionAPI, ContextEvent } from "@earendil-works/pi-coding-agent";
 import { createMemoryConsolidationEngine } from "../../../server/services/memory/engine.js";
 import { MEMORY_THRESHOLD, MEMORY_THRESHOLD_MAX } from "../../../server/services/memory/types.js";
 

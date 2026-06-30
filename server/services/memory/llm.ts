@@ -1,12 +1,12 @@
 /**
  * Memory Consolidation - LLM Summarization
  *
- * Uses completeSimple from @mariozechner/pi-ai
+ * Uses completeSimple from @earendil-works/pi-ai/compat
  */
 
-import type { Model, UserMessage, TextContent } from "@mariozechner/pi-ai";
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import { completeSimple } from "@mariozechner/pi-ai";
+import type { Model, UserMessage, TextContent } from "@earendil-works/pi-ai";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import { completeSimple } from "@earendil-works/pi-ai/compat";
 
 const SUMMARIZATION_SYSTEM_PROMPT = `You are a terse summarizer. If the conversation contains nothing worth preserving (small talk, errors, debugging noise), respond with exactly "SKIP".
 

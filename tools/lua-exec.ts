@@ -4,7 +4,7 @@
  * AI 可通过此工具调用预注册的 Lua 脚本
  */
 
-import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { luaRuntime } from "./lua-runtime.js";
 import { getLuaTool, listLuaToolNames } from "./lua-tools-registry.js";

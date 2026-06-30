@@ -4,7 +4,7 @@
  * 在 Session 开始时将 MEMORY.md 内容注入到 agent context
  */
 
-import type { ExtensionAPI, BeforeAgentStartEvent } from "@mariozechner/pi-coding-agent/dist/core/extensions/types.d.ts";
+import type { ExtensionAPI, BeforeAgentStartEvent } from "@earendil-works/pi-coding-agent";
 import { readMemorySync } from "../../../server/services/memory/storage.js";
 
 const MEMORY_CONTEXT_HEADER = "【历史记忆】以下是你之前会话中沉淀的重要信息，请参考：\n\n";

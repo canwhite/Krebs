@@ -4,7 +4,7 @@
  * Hooks into before_agent_start to inject relevant session history context.
  */
 
-import type { ExtensionAPI, BeforeAgentStartEvent, ExtensionContext } from '@mariozechner/pi-coding-agent/dist/core/extensions/types.d.ts';
+import type { ExtensionAPI, BeforeAgentStartEvent, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { SessionIndexEntry } from '../../../server/services/session-history/types.js';
 import { bm25Search, preprocessForQuery } from '../../../server/services/session-history/bm25.js';
 import { extractAssistantContent } from '../../../server/services/session-history/storage.js';

@@ -10,8 +10,11 @@ import type {
   TurnEndEvent,
   BeforeAgentStartEvent,
   ContextEvent,
-  ContextEventResult,
-} from "@mariozechner/pi-coding-agent/dist/core/extensions/types.d.ts";
+} from "@earendil-works/pi-coding-agent";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+
+/** Context event result type (not re-exported from earendil-works pi-coding-agent) */
+type ContextEventResult = { messages?: AgentMessage[] };
 import {
   MAX_RETRIES,
   SKIP_FIRST_N_TURNS,

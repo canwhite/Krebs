@@ -5,7 +5,7 @@
  * 写命令 (echo, mkdir, rm, etc.) → 沙箱执行
  */
 
-import type { AgentToolResult } from "@mariozechner/pi-agent-core";
+import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
 import type { WasmtimeExecutor } from "../executor";
 import type { BashTool } from "./types";
 import { BashToolSchema } from "./types";

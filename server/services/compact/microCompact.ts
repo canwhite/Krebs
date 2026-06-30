@@ -8,8 +8,8 @@
  * 4. 完整内容持久化到 transcript
  */
 
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import type { TextContent, ImageContent, ToolResultMessage } from "@mariozechner/pi-ai";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { TextContent, ImageContent, ToolResultMessage } from "@earendil-works/pi-ai";
 import { DEFAULT_MICRO_COMPACT_CONFIG, type MicroCompactConfig } from "./types.js";
 
 export interface PruneTarget {

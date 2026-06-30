@@ -1,5 +1,5 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent/dist/core/extensions/types.d.ts";
-import type { TextContent, ImageContent } from "@mariozechner/pi-ai";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { TextContent, ImageContent } from "@earendil-works/pi-ai";
 import { createMicroCompact } from "../../../server/services/compact/microCompact.js";
 import { createContextCollapser, getLatestSummaryAnchor } from "../../../server/services/compact/contextCollapse.js";
 

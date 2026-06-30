@@ -15,7 +15,7 @@ import {
   type CreateAgentSessionRuntimeFactory,
   getAgentDir,
   createAgentSessionServices,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import {
   InMemorySessionRepository,
   type SessionRepository,
@@ -28,8 +28,8 @@ import memoryContextExtension from "../.pi/extensions/memory-context/index.js";
 import sessionHistoryExtension from "../.pi/extensions/session-history-rag/index.js";
 import goalConstraintExtension from "../.pi/extensions/goal-constraint/index.js";
 import selfVerificationExtension from "../.pi/extensions/self-verification/index.js";
-import type { Model } from "@mariozechner/pi-ai";
-import { getModel } from "@mariozechner/pi-ai";
+import type { Model } from "@earendil-works/pi-ai";
+import { getModel } from "@earendil-works/pi-ai/compat";
 import { join } from "path";
 import { existsSync, readFileSync } from "fs";
 import { TOOLS } from "../tools/index.js";
@@ -147,12 +147,8 @@ const createRuntimeFactory: CreateAgentSessionRuntimeFactory = async (
     thinkingLevel: "off",
     authStorage,
     modelRegistry,
-    tools: [
-      createReadTool(cwd),
-      bashTool as any,
-      createEditTool(cwd),
-    ],
-    customTools: TOOLS.map((t) => t.tool),
+    tools: ["read", "bash", "edit"],
+    customTools: [bashTool as any, ...TOOLS.map((t) => t.tool)],
     resourceLoader,
   });
 

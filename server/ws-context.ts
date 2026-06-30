@@ -3,7 +3,7 @@
  * 封装每个 WebSocket 连接的状态
  */
 
-import type { AgentSessionRuntime } from "@mariozechner/pi-coding-agent";
+import type { AgentSessionRuntime } from "@earendil-works/pi-coding-agent";
 import type { MonitorLogger } from "../lib/logger.js";
 
 interface WsData {

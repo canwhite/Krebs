@@ -4,8 +4,8 @@
  * Orchestrates goal extraction, drift detection, and correction generation.
  */
 
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { extractGoalsWithLLM } from "./llm.js";
 import { SemanticAnalyzer } from "./semantic.js";
 import { GOAL_CONSTRAINT_THRESHOLDS, STOP_WORDS, type DriftResult, type GoalSummary } from "./types.js";

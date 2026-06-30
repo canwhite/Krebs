@@ -9,9 +9,9 @@ import {
   ModelRegistry,
   createExtensionRuntime,
   createSyntheticSourceInfo,
-} from "@mariozechner/pi-coding-agent";
-import type { Model } from "@mariozechner/pi-ai";
-import { getModel } from "@mariozechner/pi-ai";
+} from "@earendil-works/pi-coding-agent";
+import type { Model } from "@earendil-works/pi-ai";
+import { getModel } from "@earendil-works/pi-ai/compat";
 import { Type } from "@sinclair/typebox";
 import { SKILLS } from "../skills/index";
 

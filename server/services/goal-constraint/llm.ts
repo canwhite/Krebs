@@ -4,8 +4,8 @@
  * Uses LLM to extract core goals and key metrics from conversation messages.
  */
 
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { CoreGoal, KeyMetric } from "./types.js";
 import { STOP_WORDS } from "./types.js";
 import { extractGoalKeywords } from "./embedding.js";
