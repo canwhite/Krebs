@@ -23,6 +23,11 @@ import {
 } from "../../../server/services/self-verification/types.js";
 import { verifyResult } from "../../../server/services/self-verification/llm.js";
 
+interface CorrectionItem {
+  correction: string;
+  turnNumber: number;
+}
+
 const sessionStates = new Map<string, SessionState>();
 
 function getSessionState(sessionId: string): SessionState {
@@ -32,8 +37,7 @@ function getSessionState(sessionId: string): SessionState {
       goalInitialized: false,
       turnCount: 0,
       retryCount: 0,
-      pendingCorrection: null,
-      pendingCorrectionTurn: 0,
+      pendingCorrections: [],
       lastVerifiedContent: "",
     });
   }
@@ -68,10 +72,10 @@ export default function (api: ExtensionAPI) {
       console.log(`[SelfVerification] Goal initialized: ${event.prompt.substring(0, 50)}...`);
     }
 
-    // Clear pending correction on new user message
-    if (state.pendingCorrection !== null) {
-      console.log(`[SelfVerification] New user message, clearing pending`);
-      state.pendingCorrection = null;
+    // Clear pending corrections on new user message (new topic = fresh start)
+    if (state.pendingCorrections.length > 0) {
+      console.log(`[SelfVerification] New user message, clearing ${state.pendingCorrections.length} pending corrections`);
+      state.pendingCorrections = [];
     }
 
     return {};
@@ -91,9 +95,14 @@ export default function (api: ExtensionAPI) {
       return;
     }
 
-    // If there's a pending correction, don't verify again until it's injected
-    if (state.pendingCorrection) {
-      console.log(`[SelfVerification] Pending correction exists, will inject in context`);
+    // If there are pending corrections, don't verify again until one is injected
+    if (state.pendingCorrections.length > 0) {
+      console.log(`[SelfVerification] Pending corrections exist (${state.pendingCorrections.length}), will inject in context`);
+      // Still update lastVerifiedContent to avoid false positive when corrections are eventually injected
+      const result = getLastAssistantContent(event.message);
+      if (result) {
+        state.lastVerifiedContent = result;
+      }
       return;
     }
 
@@ -124,9 +133,12 @@ export default function (api: ExtensionAPI) {
       state.retryCount++;
       console.log(`[SelfVerification] Correction ${state.retryCount}/${MAX_RETRIES}: ${verification.reason}`);
 
-      // Set pending correction with retry number for tracking
-      state.pendingCorrection = `${SELF_VERIFICATION_MARKER}-${state.retryCount} ${verification.reason}\nPlease correct and continue.`;
-      state.pendingCorrectionTurn = state.turnCount;
+      // Queue the correction instead of overwriting
+      const correctionItem: CorrectionItem = {
+        correction: `${SELF_VERIFICATION_MARKER}-${state.retryCount} ${verification.reason}\nPlease correct and continue.`,
+        turnNumber: state.turnCount,
+      };
+      state.pendingCorrections.push(correctionItem);
     } else {
       console.log(`[SelfVerification] Verification passed`);
     }
@@ -137,26 +149,27 @@ export default function (api: ExtensionAPI) {
     const sessionId = ctx.sessionManager.getSessionId();
     const state = getSessionState(sessionId);
 
-    // Safety: if correction pending for too many turns, clear it
-    if (state.pendingCorrection && state.turnCount - state.pendingCorrectionTurn > 5) {
+    // Safety: if oldest correction has been pending for too many turns, clear it
+    const oldestCorrection = state.pendingCorrections[0];
+    if (oldestCorrection && state.turnCount - oldestCorrection.turnNumber > 5) {
       console.log(`[SelfVerification] Correction pending too long, clearing`);
-      state.pendingCorrection = null;
+      state.pendingCorrections.shift();
     }
 
-    // If there's a pending correction to inject
-    if (state.pendingCorrection) {
+    // If there are pending corrections to inject
+    if (state.pendingCorrections.length > 0) {
       // Filter out previous correction messages to avoid loops
       event.messages = event.messages.filter((m) => !isSelfVerificationMessage(m));
 
-      // Prepend correction message
+      // Inject one correction from the front of the queue
+      const correctionItem = state.pendingCorrections.shift()!;
       event.messages.unshift({
         role: "user",
-        content: state.pendingCorrection,
+        content: correctionItem.correction,
         id: "self-verification-correction",
       } as any);
 
-      console.log(`[SelfVerification] Injected correction via context`);
-      state.pendingCorrection = null;
+      console.log(`[SelfVerification] Injected correction via context (${state.pendingCorrections.length} remaining)`);
 
       return { messages: event.messages };
     }

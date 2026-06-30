@@ -11,8 +11,7 @@ export interface SessionState {
   goalInitialized: boolean; // true once originalGoal is set from first user message
   turnCount: number;
   retryCount: number;
-  pendingCorrection: string | null;
-  pendingCorrectionTurn: number; // turn number when correction was set (for timeout)
+  pendingCorrections: Array<{ correction: string; turnNumber: number }>;
   lastVerifiedContent: string; // avoid verifying same content repeatedly
 }
 
