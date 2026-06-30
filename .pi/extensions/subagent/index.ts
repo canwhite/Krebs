@@ -13,10 +13,10 @@ import {
   steerAgent,
   abortAgent,
   cleanupAgents,
-} from "./agent-manager.js";
-import { SubagentScheduler } from "./scheduler.js";
-import { loadCustomAgents } from "./custom-agents.js";
-import { createFleetView } from "./fleet-view.js";
+} from "../../../server/services/subagent/agent-manager.js";
+import { SubagentScheduler } from "../../../server/services/subagent/scheduler.js";
+import { loadCustomAgents } from "../../../server/services/subagent/custom-agents.js";
+import { createFleetView } from "../../../server/services/subagent/fleet-view.js";
 
 // Task record for task management
 interface TaskRecord {
@@ -99,6 +99,8 @@ function toolResult(content: string, details?: any): AgentToolResult<any> {
  * Register all subagent tools
  */
 export default function registerSubagentExtension(pi: ExtensionAPI): void {
+  console.log("[Subagent] Extension loaded, registering tools...");
+
   // ========== Agent Tool ==========
 
   pi.registerTool(defineTool({
