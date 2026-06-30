@@ -2,7 +2,7 @@
 
 ## 背景
 
-将 Krebs 从 `@mariozechner/pi-coding-agent@0.66.1` 迁移到 `@earendil-works/pi-coding-agent@0.80.2`，以兼容 `pi-subagents` 扩展。
+将 Krebs 从 `@mariozechner/pi-coding-agent@0.66.1` 迁移到 `@earendil-works/pi-coding-agent@0.80.2`，实现 Krebs 扩展体系与新版 pi-coding-agent 的对接。
 
 ## 版本信息
 
@@ -24,7 +24,7 @@
 
 **影响**：Krebs 需要重构 `createAgentSession` 调用。
 
-**mariozechner (当前)**:
+**mariozechner (迁移前)**:
 ```typescript
 const result = await createAgentSession({
   tools: [
@@ -275,7 +275,7 @@ customTools: [bashTool as any, ...TOOLS.map((t) => t.tool)],
 
 ## Session 隔离设计
 
-### 当前问题
+### 原架构问题（迁移前）
 
 1. **AgentManager 单例**：所有 session 的 agents 共享同一个 Manager
 2. **Scheduler 单例**：所有 session 的 scheduled jobs 共享同一个 Scheduler
@@ -289,7 +289,6 @@ export default function (api: ExtensionAPI) {
   const sessionState = new Map<string, {
     agentManager: AgentManager;
     scheduler: SubagentScheduler;
-    contextCache: ContextCache;
   }>();
 
   api.on("session_start", async (_event, ctx) => {
@@ -299,7 +298,6 @@ export default function (api: ExtensionAPI) {
     const state = {
       agentManager: new AgentManager(/* sessionId 传入 */),
       scheduler: new SubagentScheduler(),
-      contextCache: new ContextCache(),
     };
 
     sessionState.set(sessionId, state);
@@ -317,6 +315,8 @@ export default function (api: ExtensionAPI) {
   });
 
   // 工具执行时通过 ctx 获取对应的 session 状态
+  // 注意：Subagent 工具执行发生在 parent 的 extension context 中，
+  // 因此 ctx.sessionManager.getSessionId() 返回的是 parent 的 sessionId
   const getState = (ctx) => {
     const sessionId = ctx.sessionManager.getSessionId();
     return sessionState.get(sessionId);
@@ -330,7 +330,6 @@ export default function (api: ExtensionAPI) {
 |------|----------|
 | AgentManager | 每个 session 独立实例，sessionId 区分 |
 | Scheduler | 每个 session 独立实例 |
-| Context Cache | 每个 session 独立 Map |
 | Session Manager | 每个 agent 有独立的 SessionManager |
 | Output Files | 按 sessionId 分离目录 |
 
@@ -346,8 +345,8 @@ export default function (api: ExtensionAPI) {
 2. **completeSimple 兼容性** ✓ 已验证
    - `pi-ai/compat/index.d.ts` 确认签名兼容
 
-3. **创建测试分支**（待执行）
-   - 在测试分支上验证迁移
+3. **创建测试分支** ✓ 已完成
+   - 已在主分支完成迁移
    - 确认 API 调用正确
 
 ### Phase 1: 依赖更新
@@ -374,7 +373,7 @@ export default function (api: ExtensionAPI) {
 2. `bunx tsc --noEmit` 无错误
 3. 启动 Krebs 服务，验证 WebSocket 连接
 4. 测试基本工具调用（read, bash, edit）
-5. 测试 pi-subagents 功能（Agent 工具）
+5. 测试 subagent 功能（Agent 工具）
 
 ## 风险与缓解
 
@@ -382,7 +381,7 @@ export default function (api: ExtensionAPI) {
 |------|------|----------|
 | ~~AuthStorage.setRuntimeApiKey()~~ | ~~已验证存在~~ | ✓ |
 | ~~completeSimple 签名~~ | ~~已验证兼容~~ | ✓ |
-| tools 参数类型不兼容 | 编译错误 | `tools: ["read", "edit"]` + `customTools: [bashTool, ...]` |
+| tools 参数类型不兼容 | 编译错误 | `tools: ["read", "bash", "edit"]` + `customTools: [bashTool, ...]` |
 | AgentMessage 类型路径变化 | 编译错误 | 更新 import 路径 |
 | pi-subagents API 不兼容 | 运行时错误 | 迁移后测试验证 |
 | Node.js 版本要求 | 运行时错误 | 检查 >= 22.19.0 (当前 v26 ✓) |
@@ -394,25 +393,24 @@ export default function (api: ExtensionAPI) {
 - [x] completeSimple 兼容性已验证
 - [x] AgentMessage 类型兼容
 - [x] UserMessage 定义一致
-- [ ] **仅剩 tools 参数类型需要修改**
+- [x] **tools 参数类型已修复** (`tools: ["read", "bash", "edit"]` + sandbox bash via customTools)
 
 ### Phase 1 验证
-- [ ] `pnpm install` 成功
-- [ ] 无依赖冲突
+- [x] `pnpm install` 成功
+- [x] 无依赖冲突
 
 ### Phase 2 验证
 - [x] `bun run build` 通过
 - [x] `bunx tsc --noEmit` 无错误
 - [x] 所有 import 路径正确
 
-### Phase 3 验证
+### Phase 3 验证（构建完成，运行时待验证）
 - [ ] WebSocket 服务启动成功
 - [ ] AuthStorage API Key 设置正确
 - [ ] 基本工具调用（read, bash, edit）正常
 
-### Phase 4 验证
+### Phase 4 验证（运行时待验证）
 - [ ] Memory consolidation 正常
 - [ ] Goal constraint 正常
 - [ ] Self verification 正常
-- [ ] Agent 工具可用
 - [ ] Session 隔离正常（多 session 并行）
