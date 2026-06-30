@@ -1,8 +1,8 @@
 /**
  * Self-Verification Extension
  *
- * 在 turn_end 时验证 Agent 的回答是否正确，
- * 失败时注入修正消息让 Agent 继续修正。
+ * Verifies Agent's response at turn_end.
+ * On failure, injects a correction message to have Agent self-correct.
  */
 
 import type {
@@ -29,9 +29,11 @@ function getSessionState(sessionId: string): SessionState {
   if (!sessionStates.has(sessionId)) {
     sessionStates.set(sessionId, {
       originalGoal: "",
+      goalInitialized: false,
       turnCount: 0,
       retryCount: 0,
       pendingCorrection: null,
+      pendingCorrectionTurn: 0,
       lastVerifiedContent: "",
     });
   }
@@ -54,26 +56,28 @@ function isSelfVerificationMessage(msg: any): boolean {
 }
 
 export default function (api: ExtensionAPI) {
-  // 1. 捕获原始目标（每次新用户消息时更新）
+  // 1. Capture original goal (only on first message, not on each before_agent_start)
   api.on("before_agent_start", (event: BeforeAgentStartEvent, ctx) => {
     const sessionId = ctx.sessionManager.getSessionId();
     const state = getSessionState(sessionId);
 
-    // 新的用户消息，清除 pending 和所有状态
+    // Only initialize goal once from the first user message
+    if (!state.goalInitialized) {
+      state.originalGoal = event.prompt;
+      state.goalInitialized = true;
+      console.log(`[SelfVerification] Goal initialized: ${event.prompt.substring(0, 50)}...`);
+    }
+
+    // Clear pending correction on new user message
     if (state.pendingCorrection !== null) {
       console.log(`[SelfVerification] New user message, clearing pending`);
+      state.pendingCorrection = null;
     }
-    state.pendingCorrection = null;
-    state.originalGoal = event.prompt;
-    state.retryCount = 0;
-    state.lastVerifiedContent = "";
-    state.turnCount = 0; // 重置 turnCount，新任务从头开始
-    console.log(`[SelfVerification] New task: ${event.prompt.substring(0, 50)}...`);
 
     return {};
   });
 
-  // 2. 每个 turn 结束时验证（跳过前两次）
+  // 2. Verify after each turn (skip first N turns)
   api.on("turn_end", async (event: TurnEndEvent, ctx) => {
     const sessionId = ctx.sessionManager.getSessionId();
     const state = getSessionState(sessionId);
@@ -81,63 +85,70 @@ export default function (api: ExtensionAPI) {
     state.turnCount++;
     console.log(`[SelfVerification] Turn ${state.turnCount} ended`);
 
-    // 跳过前 N 次 turn
+    // Skip first N turns
     if (state.turnCount <= SKIP_FIRST_N_TURNS) {
       console.log(`[SelfVerification] Skipping (turn ${state.turnCount} <= ${SKIP_FIRST_N_TURNS})`);
       return;
     }
 
-    // 如果有待注入的修正消息（不重复验证同一个内容）
+    // If there's a pending correction, don't verify again until it's injected
     if (state.pendingCorrection) {
       console.log(`[SelfVerification] Pending correction exists, will inject in context`);
       return;
     }
 
-    // 超过最大修正次数，不再验证/修正
+    // Max retries reached
     if (state.retryCount >= MAX_RETRIES) {
       console.log(`[SelfVerification] Max corrections (${MAX_RETRIES}) reached`);
       return;
     }
 
-    // 获取本 turn 的结果
+    // Get this turn's result
     const result = getLastAssistantContent(event.message);
     if (!result) {
       console.log(`[SelfVerification] No result to verify`);
       return;
     }
 
-    // 不重复验证同一个内容
+    // Don't verify the same content repeatedly
     if (result === state.lastVerifiedContent) {
       console.log(`[SelfVerification] Same content, skipping`);
       return;
     }
     state.lastVerifiedContent = result;
 
-    // 调用 LLM 验证
+    // Call LLM to verify
     const verification = await verifyResult(result, state.originalGoal, ctx);
 
     if (!verification.passed) {
       state.retryCount++;
       console.log(`[SelfVerification] Correction ${state.retryCount}/${MAX_RETRIES}: ${verification.reason}`);
 
-      // 设置待注入的修正消息，在 context 事件中注入（带序号区分）
-      state.pendingCorrection = `${SELF_VERIFICATION_MARKER}-${state.retryCount} ${verification.reason}\n请修正并继续。`;
+      // Set pending correction with retry number for tracking
+      state.pendingCorrection = `${SELF_VERIFICATION_MARKER}-${state.retryCount} ${verification.reason}\nPlease correct and continue.`;
+      state.pendingCorrectionTurn = state.turnCount;
     } else {
       console.log(`[SelfVerification] Verification passed`);
     }
   });
 
-  // 3. context 事件：注入修正消息（参考 Goal Constraint 方式）
+  // 3. context event: inject correction message
   api.on("context", async (event: ContextEvent, ctx): Promise<ContextEventResult> => {
     const sessionId = ctx.sessionManager.getSessionId();
     const state = getSessionState(sessionId);
 
-    // 如果有待注入的修正消息
+    // Safety: if correction pending for too many turns, clear it
+    if (state.pendingCorrection && state.turnCount - state.pendingCorrectionTurn > 5) {
+      console.log(`[SelfVerification] Correction pending too long, clearing`);
+      state.pendingCorrection = null;
+    }
+
+    // If there's a pending correction to inject
     if (state.pendingCorrection) {
-      // 过滤掉之前的修正消息，避免循环
+      // Filter out previous correction messages to avoid loops
       event.messages = event.messages.filter((m) => !isSelfVerificationMessage(m));
 
-      // 注入修正消息
+      // Prepend correction message
       event.messages.unshift({
         role: "user",
         content: state.pendingCorrection,
@@ -153,7 +164,7 @@ export default function (api: ExtensionAPI) {
     return {};
   });
 
-  // 4. Session 结束时清理
+  // 4. Cleanup on session end
   api.on("session_shutdown", (_, ctx) => {
     const sessionId = ctx.sessionManager.getSessionId();
     if (sessionId) {

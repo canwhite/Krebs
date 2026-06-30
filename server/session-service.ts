@@ -20,8 +20,7 @@ import {
   InMemorySessionRepository,
   type SessionRepository,
 } from "../lib/session-repository.js";
-import subagents from "@tintinweb/pi-subagents/dist/index.js";
-import tasks from "@tintinweb/pi-tasks/dist/index.js";
+import subagentExtension from "../.pi/extensions/subagent/index.js";
 import memoryExtension from "../.pi/extensions/memory/index.js";
 import contextExtension from "../.pi/extensions/context/index.js";
 import memoryContextExtension from "../.pi/extensions/memory-context/index.js";
@@ -133,7 +132,7 @@ const createRuntimeFactory: CreateAgentSessionRuntimeFactory = async (
   const resourceLoader = new DefaultResourceLoader({
     cwd,
     agentDir: getAgentDir(),
-    extensionFactories: [subagents as any, tasks as any, memoryExtension as any, contextExtension as any, memoryContextExtension as any, sessionHistoryExtension as any, goalConstraintExtension as any, selfVerificationExtension as any],
+    extensionFactories: [subagentExtension as any, memoryExtension as any, contextExtension as any, memoryContextExtension as any, sessionHistoryExtension as any, goalConstraintExtension as any, selfVerificationExtension as any],
     skillsOverride: () => ({ skills, diagnostics: [] }),
     systemPromptOverride: () => systemPrompt,
     noPromptTemplates: true,
