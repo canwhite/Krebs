@@ -99,8 +99,6 @@ function toolResult(content: string, details?: any): AgentToolResult<any> {
  * Register all subagent tools
  */
 export default function registerSubagentExtension(pi: ExtensionAPI): void {
-  console.log("[Subagent] Extension loaded, registering tools...");
-
   // ========== Agent Tool ==========
 
   pi.registerTool(defineTool({

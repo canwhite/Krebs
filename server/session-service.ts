@@ -22,7 +22,7 @@ import {
 } from "../lib/session-repository.js";
 import subagentExtension from "../.pi/extensions/subagent/index.js";
 import memoryExtension from "../.pi/extensions/memory/index.js";
-import contextExtension from "../.pi/extensions/context/index.js";
+import contextExtension from "../.pi/extensions/compact/index.js";
 import memoryContextExtension from "../.pi/extensions/memory-context/index.js";
 import sessionHistoryExtension from "../.pi/extensions/session-history-rag/index.js";
 import goalConstraintExtension from "../.pi/extensions/goal-constraint/index.js";
