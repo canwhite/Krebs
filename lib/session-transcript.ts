@@ -81,8 +81,8 @@ export function extractFromTurnEvent(message: any): string {
   try {
     const textParts =
       message?.content
-        ?.filter((c: any) => c.type === "text" || c.type === "thinking")
-        .map((c: any) => (c.type === "thinking" ? c.thinking : c.text)) || [];
+        ?.filter((c: any) => c.type === "text")
+        .map((c: any) => c.text) || [];
     const result = textParts.join("");
     console.log('[DEBUG-extractTurn] content_parts:', message?.content?.length, 'result_len:', result.length, 'types:', message?.content?.map((c: any) => c.type));
     return result;
