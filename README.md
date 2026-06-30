@@ -24,7 +24,8 @@
 | 🏖️ **Sandbox** | WASM-based write command sandbox (wasmtime + coreutils) | |
 | 🧠 **Memory** | Two-phase memory: 50% trigger consolidation, session start injection | |
 | 📚 **Session History RAG** | BM25 retrieval of relevant past sessions at perception phase | |
-| 🎯 **Goal Constraint** | Auto-detect conversation drift and inject correction messages | |
+| 🎯 **Goal Constraint** | Auto-detect conversation drift and inject correction messages |
+| ✅ **Self-Verification** | Post-response verification that checks alignment with original task, injects corrections on drift |
 
 ### Context Compression Layers
 
@@ -72,24 +73,35 @@ Session Start ──► Read MEMORY.md ──► Inject into systemPrompt
 ### Session History RAG (Perception Phase)
 
 ```
-User Message → before_agent_start → BM25检索 → 注入相关历史会话
+User Message → before_agent_start → BM25 retrieval → Inject relevant past sessions
 ```
 
-- **时机**: `before_agent_start` hook（感知阶段），每 session 只检索一次
-- **检索**: BM25 算法匹配当前问题与历史会话的 firstQuestion
-- **注入**: top-2 相关会话内容（各1000字符）格式化后注入 systemPrompt
-- **保护**: context 已满(>80%)跳过、意图跳过(重新/clear)、3s timeout
+- **Timing**: `before_agent_start` hook (perception phase), once per session
+- **Retrieval**: BM25 algorithm matches current query with historical session firstQuestions
+- **Injection**: Top-2 relevant sessions (1000 chars each) formatted and injected into systemPrompt
+- **Protection**: Skip if context >80% full, skip on intent (restart/clear), 3s timeout
 
 ### Goal Constraint (Perception Phase)
 
 ```
-Context Event → Token阈值检测 → 漂移检测 → 注入纠正消息
+Context Event → Token threshold detection → Drift detection → Inject correction
 ```
 
-- **目标提取**: 在 25%/40%/55% token 阈值处，LLM 从对话历史提取核心目标
-- **漂移检测**: BM25 混合评分（keyword权重0.6 + semantic权重0.4）对比当前对话与目标
-- **纠正注入**: 检测到漂移后，在消息列表头部插入 `[GOAL CONSTRAINT]` 纠正消息
-- **冷却**: 纠正后进入3轮冷却期，防止过度干预
+- **Goal Extraction**: At 25%/40%/55% token thresholds, LLM extracts core goal from conversation history
+- **Drift Detection**: BM25 hybrid scoring (keyword weight 0.6 + semantic weight 0.4) compares current dialogue with goal
+- **Correction Injection**: On drift detection, prepend `[GOAL CONSTRAINT]` correction message to message list
+- **Cooldown**: 3-turn cooldown after correction to prevent over-intervention
+
+### Self-Verification (Post-Response Phase)
+
+```
+Agent Response → Verification Check → Correction injection (if drift detected)
+```
+
+- **Timing**: After each agent response (skips first 2 turns)
+- **Verification**: LLM checks if response aligns with original task/goal
+- **Correction**: If misalignment detected, injects `[SELF-VERIFICATION]` correction message
+- **Retry**: Up to 5 retries before accepting potentially drifted response
 
 ---
 
