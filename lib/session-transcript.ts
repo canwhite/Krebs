@@ -34,6 +34,7 @@ export function extractFromMessages(
       .map((c: any) => (c.type === "thinking" ? c.thinking : c.text)) || [];
 
   const result = textParts.join("").trim();
+  console.log('[DEBUG-extractMsg] last_msg_content_len:', lastMessage.content?.length, 'textParts:', textParts.length, 'result_len:', result.length, 'types:', lastMessage.content?.map((c: any) => c.type));
   logger?.log(
     `[Transcript] 提取到 ${textParts.length} 段 text，共 ${result.length} 字符`,
   );
@@ -82,7 +83,9 @@ export function extractFromTurnEvent(message: any): string {
       message?.content
         ?.filter((c: any) => c.type === "text" || c.type === "thinking")
         .map((c: any) => (c.type === "thinking" ? c.thinking : c.text)) || [];
-    return textParts.join("");
+    const result = textParts.join("");
+    console.log('[DEBUG-extractTurn] content_parts:', message?.content?.length, 'result_len:', result.length, 'types:', message?.content?.map((c: any) => c.type));
+    return result;
   } catch (e) {
     return "";
   }

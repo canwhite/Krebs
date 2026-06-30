@@ -133,7 +133,7 @@ const StreamingMarkdown = memo(function StreamingMarkdown({
       astCache.set(processedContent, result);
       return result;
     } catch (e) {
-      console.error('Markdown parse error:', e);
+      console.error('[DEBUG-md-err] content_preview:', content.substring(0, 200), '| error:', e.message);
       return <span className="error">{content}</span>;
     }
   }, [content]);
@@ -227,6 +227,7 @@ function App() {
 
           case "response_end":
             setIsResponding(false);
+            console.log('[DEBUG-resp_end] ref cleared, isStreaming set false');
             streamingMessageIdRef.current = null;
             currentThinkMessageRef.current = { id: null };
             setMessages((prev) =>
@@ -236,14 +237,17 @@ function App() {
 
           case "turn_end":
             // 用 session 的完整内容替换流式消息，触发 StreamingMarkdown 正确渲染
-            if (data.content && streamingMessageIdRef.current) {
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === streamingMessageIdRef.current
-                    ? { ...msg, content: data.content, isStreaming: false }
-                    : msg,
-                ),
-              );
+            // 不依赖 streamingMessageIdRef，因为 response_end 可能先于 turn_end 到达
+            if (data.content) {
+              setMessages((prev) => {
+                const idx = prev.findLastIndex(m => m.role === "assistant" && m.isStreaming);
+                if (idx !== -1) {
+                  return prev.map((msg, i) =>
+                    i === idx ? { ...msg, content: data.content, isStreaming: false } : msg
+                  );
+                }
+                return prev;
+              });
             }
             break;
 
@@ -298,7 +302,6 @@ function App() {
 
           case "text_delta":
             if (!streamingMessageIdRef.current) {
-              // 创建新流式消息（服务器端已确保有内容）
               const newId = crypto.randomUUID();
               streamingMessageIdRef.current = newId;
               setMessages((prev) => [
@@ -310,8 +313,8 @@ function App() {
                   isStreaming: true,
                 },
               ]);
+              console.log('[DEBUG-text_delta] NEW msg, delta_len:', data.delta.length);
             } else {
-              // 更新现有的流式消息
               setMessages((prev) =>
                 prev.map((msg) =>
                   msg.id === streamingMessageIdRef.current
@@ -319,6 +322,7 @@ function App() {
                     : msg,
                 ),
               );
+              console.log('[DEBUG-text_delta] APPEND, delta_len:', data.delta.length);
             }
             break;
 
