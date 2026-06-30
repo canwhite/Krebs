@@ -23,11 +23,15 @@
 | 🔄 **Multi-Model** | Switch between DeepSeek / Claude with one env var | |
 | 🏖️ **Sandbox** | WASM-based write command sandbox (wasmtime + coreutils) | |
 | 🧠 **Memory** | Two-phase memory: 50% trigger consolidation, session start injection | |
+| 📚 **Session History RAG** | BM25 retrieval of relevant past sessions at perception phase | |
+| 🎯 **Goal Constraint** | Auto-detect conversation drift and inject correction messages | |
 
 ### Context Compression Layers
 
 ```
 Token Usage
+    │
+    ├── Perception ── Session History RAG ──── Inject relevant past sessions (BM25)
     │
     ├── 50% ─── Memory ───────────── Consolidate to MEMORY.md
     │
@@ -36,6 +40,8 @@ Token Usage
     ├── 75% ─── Context Collapse ── Summarize dialogue to projection
     │
     └── 83.5% ─ Auto Compact ────── Built into pi-coding-agent
+
+Perception Phase ── Goal Constraint ───────── Monitor drift, inject correction
 ```
 
 ### Sandbox (Write Command Isolation)
@@ -62,6 +68,28 @@ Session Start ──► Read MEMORY.md ──► Inject into systemPrompt
 - **Write Phase**: At 50% token usage, LLM generates a summary of recent messages → appends to `MEMORY.md`
 - **Read Phase**: On session start, `MEMORY.md` content is injected into agent's system prompt
 - **Rollback**: Sessions can invalidate prior consolidations via session entries
+
+### Session History RAG (Perception Phase)
+
+```
+User Message → before_agent_start → BM25检索 → 注入相关历史会话
+```
+
+- **时机**: `before_agent_start` hook（感知阶段），每 session 只检索一次
+- **检索**: BM25 算法匹配当前问题与历史会话的 firstQuestion
+- **注入**: top-2 相关会话内容（各1000字符）格式化后注入 systemPrompt
+- **保护**: context 已满(>80%)跳过、意图跳过(重新/clear)、3s timeout
+
+### Goal Constraint (Perception Phase)
+
+```
+Context Event → Token阈值检测 → 漂移检测 → 注入纠正消息
+```
+
+- **目标提取**: 在 25%/40%/55% token 阈值处，LLM 从对话历史提取核心目标
+- **漂移检测**: BM25 混合评分（keyword权重0.6 + semantic权重0.4）对比当前对话与目标
+- **纠正注入**: 检测到漂移后，在消息列表头部插入 `[GOAL CONSTRAINT]` 纠正消息
+- **冷却**: 纠正后进入3轮冷却期，防止过度干预
 
 ---
 
@@ -121,7 +149,15 @@ open http://localhost:3333
                               │  .pi/extensions/                       │
                               │    ├── context/ (Compression)         │
                               │    ├── memory/ (Consolidation 50%)   │
-                              │    └── memory-context/ (Injection)   │
+                              │    ├── memory-context/ (Injection)   │
+                              │    ├── session-history-rag/ (RAG)    │
+                              │    └── goal-constraint/ (Drift)       │
+                              │                                       │
+                              │  server/services/                     │
+                              │    ├── compact/                      │
+                              │    ├── memory/                       │
+                              │    ├── session-history/ (BM25+tools) │
+                              │    └── goal-constraint/ (Engine)     │
                               │                                       │
                               │  server/sandbox/                       │
                               │    └── wasmtime + coreutils.wasm     │
@@ -277,16 +313,29 @@ Krebs/
 │       ├── compact/          # Context compression
 │       │   ├── microCompact.ts
 │       │   └── contextCollapse.ts
-│       └── memory/           # Memory consolidation
-│           ├── engine.ts     # LLM summary generation
-│           ├── storage.ts    # MEMORY.md read/write
-│           ├── llm.ts       # LLM calls
+│       ├── memory/           # Memory consolidation
+│       │   ├── engine.ts     # LLM summary generation
+│       │   ├── storage.ts    # MEMORY.md read/write
+│       │   ├── llm.ts       # LLM calls
+│       │   └── types.ts     # Constants & types
+│       ├── session-history/  # Session History RAG
+│       │   ├── bm25.ts      # BM25 algorithm + tokenizer
+│       │   ├── indexer.ts   # Index build + cache
+│       │   ├── storage.ts   # Content extraction
+│       │   └── types.ts     # Type definitions
+│       └── goal-constraint/  # Goal constraint
+│           ├── engine.ts     # Drift detection engine
+│           ├── llm.ts       # LLM goal extraction
+│           ├── semantic.ts   # Hybrid scoring
+│           ├── storage.ts   # Persistence
 │           └── types.ts     # Constants & types
 │
 ├── .pi/extensions/          # pi-coding-agent hooks
 │   ├── context/             # Compression hooks
 │   ├── memory/              # Memory consolidation (50% trigger)
-│   └── memory-context/      # Memory injection (session start)
+│   ├── memory-context/      # Memory injection (session start)
+│   ├── session-history-rag/ # Session History RAG (before_agent_start)
+│   └── goal-constraint/    # Goal constraint (context event)
 │
 ├── lib/                     # Shared utilities
 │
