@@ -63,6 +63,10 @@ const consolidationEntryId = (ctx.sessionManager as any).appendCustomEntry(CUSTO
 
 注意：需要 `(ctx.sessionManager as any)` 转换，因为 `ctx.sessionManager` 类型为 `ReadonlySessionManager`（不暴露 `appendCustomEntry`），但运行时是完整的 `SessionManager` 实例。
 
+## 未完成：Invalidation entry 创建路径
+
+修复后 `appendCustomEntry` 可以获取 entry ID，但**仍然没有代码主动创建 invalidation entry**。当需要废弃旧的 consolidation 时，没有触发路径。见 `docs/bugs/README.md` 已知局限 #2。
+
 ## 验证
 
 - Build ✅

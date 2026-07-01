@@ -187,10 +187,28 @@ export function createMemoryConsolidationEngine(): MemoryConsolidationEngine {
         }
       }
 
+      // Auto-invalidate previous consolidation entry (new one supersedes it)
+      if (lastState) {
+        const prevEntry = entries.find(
+          (e: SessionEntry) =>
+            e.type === "custom" &&
+            e.customType === CUSTOM_ENTRY_TYPE &&
+            (e.data as ConsolidationState)?.messageCountAtConsolidation ===
+              lastState.messageCountAtConsolidation
+        );
+        if (prevEntry) {
+          (ctx.sessionManager as any).appendCustomEntry(INVALIDATION_ENTRY_TYPE, {
+            invalidatedEntryId: prevEntry.id,
+            invalidatedAt: Date.now(),
+            reason: "superseded_by_newer_consolidation",
+          });
+        }
+      }
+
       // Always record state (even if SKIP) so pointer advances
       // Use ctx.sessionManager.appendCustomEntry to get the entry ID back (api.appendEntry returns void)
       // Cast needed: ctx.sessionManager is typed as ReadonlySessionManager but runtime is full SessionManager
-      const consolidationEntryId = (ctx.sessionManager as any).appendCustomEntry(CUSTOM_ENTRY_TYPE, {
+      (ctx.sessionManager as any).appendCustomEntry(CUSTOM_ENTRY_TYPE, {
         messageCountAtConsolidation: currentMessageCount,
         tokensAtConsolidation,
         summaryText,

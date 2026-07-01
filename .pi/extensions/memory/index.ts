@@ -6,7 +6,7 @@
 
 import type { ExtensionAPI, ContextEvent } from "@earendil-works/pi-coding-agent";
 import { createMemoryConsolidationEngine } from "../../../server/services/memory/engine.js";
-import { MEMORY_THRESHOLD, MEMORY_THRESHOLD_MAX } from "../../../server/services/memory/types.js";
+import { MEMORY_THRESHOLD } from "../../../server/services/memory/types.js";
 
 const engine = createMemoryConsolidationEngine();
 
@@ -17,8 +17,9 @@ export default function (api: ExtensionAPI) {
       return {};
     }
 
-    // Trigger at 50% threshold
-    if (usage.percent >= MEMORY_THRESHOLD && usage.percent < MEMORY_THRESHOLD_MAX) {
+    // Trigger at 50% threshold (no upper bound - handles catch-up from blind spot)
+    // Engine's findConsolidationStart prevents duplicate consolidation
+    if (usage.percent >= MEMORY_THRESHOLD) {
       console.log(
         `[MemoryConsolidation] Triggered at ${(usage.percent * 100).toFixed(1)}% token usage`
       );
