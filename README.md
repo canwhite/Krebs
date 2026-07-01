@@ -26,6 +26,7 @@
 | 📚 **Session History RAG** | BM25 retrieval of relevant past sessions at perception phase | |
 | 🎯 **Goal Constraint** | Auto-detect conversation drift and inject correction messages |
 | ✅ **Self-Verification** | Post-response verification that checks alignment with original task, injects corrections on drift |
+| 🤖 **Subagent** | Launch autonomous sub-agents, Task queue, Fleet view, Scheduled recurring tasks |
 
 ### Context Compression Layers
 
@@ -103,6 +104,47 @@ Agent Response → Verification Check → Correction injection (if drift detecte
 - **Correction**: If misalignment detected, injects `[SELF-VERIFICATION]` correction message
 - **Retry**: Up to 5 retries before accepting potentially drifted response
 
+### Subagent (Fleet / Task Management)
+
+The agent can launch autonomous sub-agents, manage tasks, and schedule recurring jobs:
+
+```
+Main Agent ──► Agent(task)     ──► Subagent (runs independently)
+            ──► TaskExecute    ──► Task (queued, run by subagent)
+            ──► Schedule       ──► Recurring job (cron or interval)
+            ──► FleetView      ──► See all running agents
+```
+
+**Tools available to the agent:**
+
+| Tool | Description |
+|:-----|:------------|
+| `Agent` | Start a subagent to perform a task |
+| `get_subagent_result` | Get result of a completed subagent |
+| `steer_subagent` | Send a message to a running subagent |
+| `TaskCreate` | Create a named task |
+| `TaskExecute` | Execute a task using a subagent |
+| `TaskList` / `TaskGet` | List or view task status |
+| `TaskUpdate` | Update task status |
+| `FleetView` | View all running agents |
+| `Schedule` / `CancelSchedule` | Schedule recurring tasks (cron or interval) |
+| `LoadCustomAgents` | Load custom agent definitions from `.pi/agents` |
+| `CleanupAgents` | Cleanup all agents for this session |
+
+### 429 Retry Handling
+
+API rate limits (HTTP 429) are handled with automatic exponential backoff:
+
+```
+429 → retry 1 (2s) → retry 2 (4s) → retry 3 (8s) → fail
+```
+
+- **Max attempts**: 3 (configurable)
+- **Delays**: Exponential `[2000, 4000, 8000]` ms
+- **During retry**: New prompts are rejected with `rate_limited` event
+- **User abort**: Send `{ type: "abort_retry" }` to cancel in-progress retry
+- **pi-agent retry events**: `auto_retry_start/end` are forwarded to frontend, but control flow uses custom `ws.data.retryState` for accurate prompt preservation
+
 ---
 
 ## Quick Start
@@ -146,10 +188,9 @@ open http://localhost:3333
                               │          Krebs Gateway              │
                               │                                    │
                               │  ws-router        HTTP routes       │
-                              │  ├── AuthHandler   /api/messages  │
-                              │  ├── PromptHandler /api/sessions   │
-                              │  ├── StopHandler   /api/auth       │
-                              │  └── SwitchSession                  │
+                              │  ├── PromptHandler /api/messages   │
+                              │  ├── SwitchSession /api/sessions   │
+                              │  └── (inlined)     /api/auth       │
                               └─────────────────┬─────────────────┘
                                                 │
                               ┌─────────────────▼─────────────────┐
@@ -163,13 +204,17 @@ open http://localhost:3333
                               │    ├── memory/ (Consolidation 50%)   │
                               │    ├── memory-context/ (Injection)   │
                               │    ├── session-history-rag/ (RAG)    │
-                              │    └── goal-constraint/ (Drift)       │
+                              │    ├── goal-constraint/ (Drift)       │
+                              │    ├── self-verification/ (Verify)    │
+                              │    └── subagent/ (Fleet/Tasks)         │
                               │                                       │
                               │  server/services/                     │
                               │    ├── compact/                      │
                               │    ├── memory/                       │
                               │    ├── session-history/ (BM25+tools) │
-                              │    └── goal-constraint/ (Engine)     │
+                              │    ├── goal-constraint/ (Engine)    │
+                              │    ├── self-verification/ (LLM)     │
+                              │    └── subagent/ (Fleet/Tasks)       │
                               │                                       │
                               │  server/sandbox/                       │
                               │    └── wasmtime + coreutils.wasm     │
@@ -253,14 +298,6 @@ const ws = new WebSocket("ws://localhost:3333/ws");
 ws.onopen = () => ws.send(JSON.stringify({ type: "auth" }));
 ```
 
-**Send messages:**
-
-```javascript
-ws.send(JSON.stringify({ type: "prompt", message: "Hello" }));
-ws.send(JSON.stringify({ type: "stop" }));
-ws.send(JSON.stringify({ type: "switch_session", sessionId: "..." }));
-```
-
 **Receive events:**
 
 | Event | When |
@@ -272,6 +309,20 @@ ws.send(JSON.stringify({ type: "switch_session", sessionId: "..." }));
 | `tool_start` / `tool_end` | Tool execution |
 | `turn_end` | Round complete |
 | `response_end` | Full agent response done |
+| `rate_limited` | API 429 — retry in progress |
+| `retry_success` | Retry succeeded, response delivered |
+| `retry_failed` | All retries exhausted |
+| `retry_aborted` | User aborted retry via `abort_retry` message |
+| `question_queued` | Follow-up received while agent was streaming |
+
+### Send messages
+
+```javascript
+ws.send(JSON.stringify({ type: "prompt", message: "Hello" }));
+ws.send(JSON.stringify({ type: "stop" }));
+ws.send(JSON.stringify({ type: "abort_retry" }));        // abort in-progress retry
+ws.send(JSON.stringify({ type: "switch_session", sessionId: "..." }));
+```
 
 ---
 
@@ -317,7 +368,7 @@ Krebs/
 │   ├── session-service.ts   # Runtime factory + lifecycle
 │   ├── event-subscription.ts # Events → WebSocket
 │   ├── ws-router.ts         # WS message routing
-│   ├── handlers/            # Prompt / Stop / Auth / SwitchSession
+│   ├── handlers/            # PromptHandler, SwitchSessionHandler (Auth/Stop inlined in ws-router)
 │   ├── sandbox/             # WASM sandbox for write commands
 │   │   ├── executor.ts      # wasmtime + coreutils runner
 │   │   └── tools/bash.ts    # Sandbox bash tool
@@ -341,13 +392,24 @@ Krebs/
 │           ├── semantic.ts   # Hybrid scoring
 │           ├── storage.ts   # Persistence
 │           └── types.ts     # Constants & types
+│       ├── self-verification/  # Post-response LLM verification
+│       │   ├── llm.ts       # Verification LLM calls
+│       │   └── types.ts     # Result types
+│       └── subagent/        # Fleet / task management
+│           ├── agent-manager.ts  # Subagent lifecycle
+│           ├── scheduler.ts   # Cron/interval job scheduler
+│           ├── fleet-view.ts  # Running agents overview
+│           ├── custom-agents.ts  # Load from .pi/agents
+│           └── types.ts     # Shared types
 │
 ├── .pi/extensions/          # pi-coding-agent hooks
 │   ├── context/             # Compression hooks
 │   ├── memory/              # Memory consolidation (50% trigger)
 │   ├── memory-context/      # Memory injection (session start)
 │   ├── session-history-rag/ # Session History RAG (before_agent_start)
-│   └── goal-constraint/    # Goal constraint (context event)
+│   ├── goal-constraint/    # Goal constraint (context event)
+│   ├── self-verification/  # Self-verification (post-response)
+│   └── subagent/           # Subagent fleet management
 │
 ├── lib/                     # Shared utilities
 │
