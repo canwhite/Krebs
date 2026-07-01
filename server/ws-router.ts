@@ -6,8 +6,6 @@
 import type { WebSocket } from "bun";
 import type { WebSocketIncomingMessage } from "./ws-message.js";
 import { parseMessage } from "./ws-message.js";
-import type { AuthHandler } from "./handlers/AuthHandler.js";
-import type { StopHandler } from "./handlers/StopHandler.js";
 import type { SwitchSessionHandler } from "./handlers/SwitchSessionHandler.js";
 import type { PromptHandler } from "./handlers/PromptHandler.js";
 
@@ -16,14 +14,12 @@ export interface WsRouter {
 }
 
 interface WsRouterDeps {
-  authHandler: AuthHandler;
-  stopHandler: StopHandler;
   switchSessionHandler: SwitchSessionHandler;
   promptHandler: PromptHandler;
 }
 
 export function createWsRouter(deps: WsRouterDeps): WsRouter {
-  const { authHandler, stopHandler, switchSessionHandler, promptHandler } = deps;
+  const { switchSessionHandler, promptHandler } = deps;
 
   return {
     handleMessage(ws: WebSocket, rawMessage: string | Buffer) {
@@ -40,7 +36,9 @@ export function createWsRouter(deps: WsRouterDeps): WsRouter {
 
       // 认证消息可以直接处理
       if (message.type === "auth") {
-        authHandler.handle(ws, message);
+        (ws as any).data.authenticated = true;
+        console.log("[WebSocket] 认证成功（本地前端）");
+        ws.send(JSON.stringify({ type: "auth_success" }));
         return;
       }
 
@@ -58,9 +56,15 @@ export function createWsRouter(deps: WsRouterDeps): WsRouter {
 
       // 路由到对应的处理器
       switch (message.type) {
-        case "stop":
-          stopHandler.handle(ws, message);
+        case "stop": {
+          console.log(`[WebSocket] 收到停止请求`);
+          const session = (ws as any).data?.session;
+          if (session?.isStreaming) {
+            session.abort();
+            console.log(`[WebSocket] 已停止 AI 回复`);
+          }
           break;
+        }
         case "switch_session":
           switchSessionHandler.handle(ws, message);
           break;

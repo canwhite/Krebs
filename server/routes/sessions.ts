@@ -5,8 +5,13 @@ import {
   getSession,
   deleteSession,
 } from "../session-service.js";
-import { corsHeaders } from "./index.js";
 import { existsSync, readFileSync, unlinkSync } from "fs";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
 import { MonitorLogger } from "../../lib/logger.js";
 
 async function getSessionMessages(id: string) {

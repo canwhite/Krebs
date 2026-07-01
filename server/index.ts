@@ -15,7 +15,6 @@ import {
 import { subscribeToSessionEvents } from "./event-subscription.js";
 import { cleanupThinkParserState } from "./think-parser.js";
 import { extractToken, isValidToken, initToken } from "./auth.js";
-import { corsHeaders } from "./routes/index.js";
 import { handleApiMessage } from "./routes/messages.js";
 import {
   handleCreateSession,
@@ -29,11 +28,15 @@ import { loadLuaToolDefinitions } from "../tools/lua-tools-registry.js";
 import { registerTool } from "../tools/index.js";
 import { join } from "node:path";
 import {
-  createAuthHandler,
-  createStopHandler,
   createSwitchSessionHandler,
   createPromptHandler,
 } from "./handlers/index.js";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
 
 // ==================== Init ====================
 if (!MODEL_CONFIG.apiKey) {
@@ -226,8 +229,6 @@ function getContentType(filePath: string): string {
 
       // 创建路由器（每个连接一个实例）
       const router: WsRouter = createWsRouter({
-        authHandler: createAuthHandler(),
-        stopHandler: createStopHandler(),
         switchSessionHandler: createSwitchSessionHandler(),
         promptHandler: createPromptHandler(),
       });

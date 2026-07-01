@@ -1,5 +1,10 @@
 import { isValidToken, createAuthCookieHeaders } from "../auth.js";
-import { corsHeaders } from "./index.js";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
 
 async function handleInternalAuth(): Promise<Response> {
   return Response.json(

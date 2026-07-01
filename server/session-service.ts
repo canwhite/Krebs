@@ -16,10 +16,6 @@ import {
   getAgentDir,
   createAgentSessionServices,
 } from "@earendil-works/pi-coding-agent";
-import {
-  InMemorySessionRepository,
-  type SessionRepository,
-} from "../lib/session-repository.js";
 import subagentExtension from "../.pi/extensions/subagent/index.js";
 import memoryExtension from "../.pi/extensions/memory/index.js";
 import contextExtension from "../.pi/extensions/compact/index.js";
@@ -70,7 +66,7 @@ function createModel(): Model<"openai-completions"> {
   };
 }
 
-const sessions: SessionRepository = new InMemorySessionRepository();
+const sessions = new Map<string, AgentSessionRuntime>();
 
 // 创建 runtime factory
 const createRuntimeFactory: CreateAgentSessionRuntimeFactory = async (
@@ -301,8 +297,6 @@ export {
   waitForSessionComplete,
   sessions,
 };
-
-export type { SessionRepository } from "../lib/session-repository.js";
 
 // Re-export from unified transcript module for backward compatibility
 export {

@@ -12,13 +12,13 @@ import {
   type AgentSession,
   type CreateAgentSessionRuntimeFactory,
 } from "@earendil-works/pi-coding-agent";
-import { MODEL_CONFIG } from "../../../server/session-service.js";
-import { getDefaultExecutor, createSandboxBashTool } from "../../../server/sandbox/mod.js";
-import { TOOLS } from "../../../tools/index.js";
-import type { AgentOptions, AgentRecord, SubagentEvent } from "./types.js";
-import { getAgentConfig } from "./types.js";
-import { buildCleanContext } from "./context.js";
-import { ExtensionCache } from "./session-cache.js";
+import { MODEL_CONFIG } from "./session-service.js";
+import { getDefaultExecutor, createSandboxBashTool } from "./sandbox/mod.js";
+import { TOOLS } from "../tools/index.js";
+import type { AgentOptions, AgentRecord, SubagentEvent } from "./services/subagent/types.js";
+import { getAgentConfig } from "./services/subagent/types.js";
+import { buildCleanContext } from "./services/subagent/context.js";
+import { ExtensionCache } from "./services/subagent/session-cache.js";
 
 // Extensions to exclude from subagents (Krebs-specific)
 const KREBS_EXCLUDE_EXTENSIONS = [

@@ -10,7 +10,11 @@ import {
   deleteSession,
 } from "../session-service.js";
 import { saveSessionMeta } from "../../db/index.js";
-import { corsHeaders } from "./index.js";
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
 
 async function handleApiMessage(req: Request): Promise<Response> {
   const startTime = Date.now();

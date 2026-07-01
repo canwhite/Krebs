@@ -7,7 +7,7 @@ export * from "./queue.js";
 export * from "./session-cache.js";
 export * from "./context-filter.js";
 export * from "./context.js";
-export * from "./agent-runner.js";
+export * from "../../agent-runner.js";
 export * from "./agent-manager.js";
 export * from "./scheduler.js";
 export * from "./custom-agents.js";

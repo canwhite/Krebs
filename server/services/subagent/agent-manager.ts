@@ -6,7 +6,7 @@
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { AgentRecord, AgentOptions, SubagentEvent } from "./types.js";
 import { AgentQueue } from "./queue.js";
-import { createSubagentSession, startSubagentSession, handleSubagentEvent, buildSubagentPrompt } from "./agent-runner.js";
+import { createSubagentSession, startSubagentSession, handleSubagentEvent, buildSubagentPrompt } from "../../agent-runner.js";
 
 // Session state keyed by parent sessionId
 interface SessionState {
