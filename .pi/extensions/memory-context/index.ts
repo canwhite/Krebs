@@ -14,7 +14,8 @@ export default function (api: ExtensionAPI) {
     // 检查是否有 MEMORY.md
     const memoryContent = readMemorySync(ctx.cwd);
 
-    if (!memoryContent || memoryContent.trim() === "# Memory\n\n") {
+    // 检查是否有真实的 session 条目（仅 header 时不注入）
+    if (!memoryContent || !memoryContent.includes("## Session:")) {
       return {};
     }
 
