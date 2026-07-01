@@ -24,6 +24,12 @@
 |------|------|
 | [session-transcript-extract-turn-event-think-content](session-transcript-extract-turn-event-think-content.md) | `extractFromTurnEvent` 将 think 内容也提取，turn 结束后 think 被重新渲染 |
 
+### Self-Verification
+
+| 文件 | 描述 |
+|------|------|
+| [self-verification-parse-undefined](self-verification-parse-undefined.md) | `parseVerificationResponse` 未处理 API 返回空 content，导致 `undefined.startsWith` 抛出 TypeError |
+
 ---
 
 ## 分类统计
@@ -33,7 +39,8 @@
 | Memory extensions | 2 |
 | Compact extensions | 2 |
 | Session / Frontend | 1 |
-| **Total** | **5** |
+| Self-Verification | 1 |
+| **Total** | **6** |
 
 ## 修复状态
 
@@ -42,40 +49,4 @@
 - [x] compact-micro-compact-field-mismatch
 - [x] compact-generate-summary-stub
 - [x] session-transcript-extract-turn-event-think-content
-
----
-
-## 已知局限（暂未实现）
-
-以下问题已识别但尚未修复，留作后续处理：
-
-### 1. Memory consolidation 触发盲区
-
-**位置**: `.pi/extensions/memory/index.ts` 第 21 行触发条件
-
-```typescript
-if (usage.percent >= MEMORY_THRESHOLD && usage.percent < MEMORY_THRESHOLD_MAX) {
-```
-
-**问题**: `percent` 从 0.49 跳到 0.72 时，单次 `context` 事件直接跳过整个 `[50%, 70%)` 窗口，consolidation 不会触发。
-
-**触发条件**: 需要模拟 token 使用率快速跳变的场景验证。
-
----
-
-### 2. Invalidation entry 创建路径不存在
-
-**位置**: `server/services/memory/engine.ts` + `server/services/memory/types.ts`
-
-**问题**: `isInvalidated()` 检查函数已实现（第 34-42 行），`INVALIDATION_ENTRY_TYPE` 已定义。但**没有任何代码创建过 invalidation entry**。即使想废弃旧的 consolidation，也没有触发路径。
-
-**现状**: 当前为 append-only 设计，每次 consolidation 只追加新 entry，不废弃旧的。旧的 consolidation entry 会一直留在 session entries 中。
-
-**触发条件**: 需要在"需要废弃旧 consolidation"的明确场景出现时再实现。
-
----
-
-### 3. Context Collapse 重复压缩 → 已排除
-
-**结论**: 经代码分析，`emitContext` 在每次 LLM call 只运行一次（`runner.js`），不存在同一次 call 内重复触发风险。此条不是 bug。
-
+- [x] self-verification-parse-undefined

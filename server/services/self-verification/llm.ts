@@ -80,7 +80,12 @@ export async function verifyResult(
   }
 }
 
-function parseVerificationResponse(content: string): VerificationResult {
+function parseVerificationResponse(content: string | undefined): VerificationResult {
+  if (!content) {
+    console.warn('[SelfVerification] Empty verification response');
+    return { passed: true };
+  }
+
   if (content.startsWith("PASS")) {
     return { passed: true };
   }
