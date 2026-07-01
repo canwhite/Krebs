@@ -97,18 +97,18 @@ function useMount(fn: () => void) {
 
 ### Verification (Required After Any Change)
 After any change (no matter how small):
-1. `bun run build` — must pass
-2. `bunx tsc --noEmit` — **entire project**, no grep filtering, fix all errors
+1. Run the project's **build command** — must pass (e.g., `bun run build`, `go build`, `cargo build`, `gradle build`)
+2. Run the project's **static analysis / type check** — zero errors (e.g., `bunx tsc --noEmit`, `golangci-lint run`, `cargo check`, `mypy`)
 3. Runtime verification (server starts + API responses correct)
 
 **Definition of done:**
 - Build passes
-- `bunx tsc --noEmit` zero errors across entire project
+- Static analysis / type check zero errors across entire project
 - Runtime verification passed
 - No TODO left behind unless explicitly tracked
 
 ### Logic Correctness Check
-**Any code change must verify logic correctness in addition to running `bunx tsc --noEmit` for type checking.**
+**Any code change must verify logic correctness in addition to static analysis / type checking.**
 
 #### Verification Method
 1. List all execution paths affected by the change (normal + edge cases)
