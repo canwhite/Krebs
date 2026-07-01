@@ -169,9 +169,12 @@ function App() {
   });
   const currentThinkMessageRef = useRef<{ id: string | null }>({ id: null });
   const lastScrollTopRef = useRef<number>(0);
+  const isConnectingRef = useRef(false);
+  const isMountedRef = useRef(true);
 
   const connect = useCallback((retryCount = 0) => {
     setIsConnecting(true);
+    isConnectingRef.current = true;
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
 
@@ -190,6 +193,7 @@ function App() {
             console.log("WebSocket 认证成功");
             setIsConnecting(false);
             setIsConnected(true);
+            isConnectingRef.current = false;
             break;
 
           case "connected":
@@ -457,12 +461,15 @@ function App() {
     ws.onclose = (event) => {
       setIsConnected(false);
       setIsConnecting(false);
+      isConnectingRef.current = false;
 
       // 如果被拒绝（401 或 1008），重试连接
-      if ((event.code === 1008 || event.code === 4001) && retryCount < 3) {
+      if ((event.code === 1008 || event.code === 4001) && retryCount < 3 && isMountedRef.current) {
         console.log(`连接被拒绝，${1000}ms 后重试... (${retryCount + 1}/3)`);
         setTimeout(() => {
-          connect(retryCount + 1);
+          if (isMountedRef.current) {
+            connect(retryCount + 1);
+          }
         }, 1000);
       }
     };
@@ -470,6 +477,7 @@ function App() {
     ws.onerror = (error) => {
       console.error("WebSocket error:", error);
       setIsConnecting(false);
+      isConnectingRef.current = false;
     };
 
     wsRef.current = ws;
@@ -508,6 +516,32 @@ function App() {
         clearTimeout(typingTimeoutRef.current);
       }
     };
+  }, [connect]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => { isMountedRef.current = false; };
+  }, []);
+
+  useEffect(() => {
+    isConnectingRef.current = isConnecting;
+  }, [isConnecting]);
+
+  useEffect(() => {
+    const handleFocus = () => {
+      if (!isMountedRef.current) return;
+      const ws = wsRef.current;
+      if (!ws || ws.readyState === WebSocket.CLOSED) {
+        if (ws) {
+          ws.close();
+        }
+        console.log("[DEBUG] Window gained focus, attempting reconnect...");
+        connect();
+      }
+    };
+
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
   }, [connect]);
 
   useEffect(() => {
