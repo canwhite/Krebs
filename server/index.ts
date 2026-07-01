@@ -336,6 +336,13 @@ function getContentType(filePath: string): string {
       const logger = (ws as any).data?.logger;
       console.log(`[WebSocket] 连接已关闭: ${sessionId}`);
 
+      // 清理 retry timer，防止 zombie retry
+      const retryState = (ws as any).data?.retryState;
+      if (retryState?.timer) {
+        clearTimeout(retryState.timer);
+        console.log(`[WebSocket] 已清理 retry timer: ${sessionId}`);
+      }
+
       // 清理 think 解析器状态
       cleanupThinkParserState(ws);
 

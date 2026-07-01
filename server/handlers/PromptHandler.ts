@@ -17,6 +17,7 @@ export function createPromptHandler(): PromptHandler {
 
       const sessionId = (ws as any).data?.sessionId;
       const session = (ws as any).data?.session;
+      const retryState = (ws as any).data?.retryState;
 
       const firstMessageSaved = (ws as any).data?.firstMessageSaved;
       if (!firstMessageSaved && session) {
@@ -25,6 +26,23 @@ export function createPromptHandler(): PromptHandler {
           saveSessionMeta(sessionId, message.message, filePath);
           (ws as any).data.firstMessageSaved = true;
         }
+      }
+
+      // 保存 lastPrompt 以便 retry 时使用
+      (ws as any).data.lastPrompt = message.message;
+
+      // 如果在 retry 期间，拒绝新 prompt
+      if (retryState) {
+        ws.send(
+          JSON.stringify({
+            type: "rate_limited",
+            attempt: retryState.attempt,
+            maxAttempts: retryState.maxAttempts,
+            retryAfter: 0,
+            message: `正在等待 API 重试 (${retryState.attempt}/${retryState.maxAttempts})，请稍后`,
+          }),
+        );
+        return;
       }
 
       if (session.isRetrying) {
