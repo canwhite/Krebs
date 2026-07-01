@@ -100,15 +100,17 @@ interface ConsolidationState {
 
 **防重机制**：通过 messageCount 计数器判断是否有新消息。
 
-### Rollback 机制
+### Rollback 机制（部分实现）
 
-通过 invalidation entry 实现：
+`INVALIDATION_ENTRY_TYPE` 类型已定义，`getLastValidState()` 中实现了 `isInvalidated()` 检查，但**尚无主动触发 invalidation 的代码路径**。
+
+Consolidation entry 现在通过 `ctx.sessionManager.appendCustomEntry()` 创建（而非 `api.appendEntry`），因此可以获取到 entry ID，为后续实现 invalidation 提供了基础：
 ```typescript
-// 追加 invalidation entry
-api.appendEntry("consolidation_invalidation", {
-  invalidatedEntryId: lastEntry.id,
-  invalidatedAt: Date.now(),
-  reason: "user_requested"
+const consolidationEntryId = (ctx.sessionManager as any).appendCustomEntry(CUSTOM_ENTRY_TYPE, {
+  messageCountAtConsolidation: currentMessageCount,
+  tokensAtConsolidation,
+  summaryText,
+  createdAt: Date.now(),
 });
 ```
 
@@ -204,6 +206,14 @@ pi-coding-agent 文档声称支持 `.pi/extensions/` 自动发现，但 `resourc
 **当前解决方案**：通过 `extensionFactories` 显式注册。
 
 详见：`docs/pi/extension-loading-mechanism.md`
+
+### Rollback / Invalidation 机制未激活
+
+`getLastValidState()` 中已实现 `isInvalidated()` 检查，`INVALIDATION_ENTRY_TYPE` 类型已定义，但**没有代码主动创建 invalidation entry**。当前为 append-only 设计，已创建的 consolidation entry 无法被废弃。
+
+### 触发盲区
+
+阈值窗口为 `[MEMORY_THRESHOLD, MEMORY_THRESHOLD_MAX) = [0.50, 0.70)`。如果 token 使用率从 49% 跳到 72%（单次大消息或 context 更新），会跳过整个窗口，consolidation 不会被触发。
 
 ---
 

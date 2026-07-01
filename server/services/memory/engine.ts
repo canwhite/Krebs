@@ -188,8 +188,9 @@ export function createMemoryConsolidationEngine(): MemoryConsolidationEngine {
       }
 
       // Always record state (even if SKIP) so pointer advances
-      // Use api.appendEntry since it's on ExtensionAPI, not ExtensionContext
-      api.appendEntry(CUSTOM_ENTRY_TYPE, {
+      // Use ctx.sessionManager.appendCustomEntry to get the entry ID back (api.appendEntry returns void)
+      // Cast needed: ctx.sessionManager is typed as ReadonlySessionManager but runtime is full SessionManager
+      const consolidationEntryId = (ctx.sessionManager as any).appendCustomEntry(CUSTOM_ENTRY_TYPE, {
         messageCountAtConsolidation: currentMessageCount,
         tokensAtConsolidation,
         summaryText,
