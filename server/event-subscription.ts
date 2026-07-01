@@ -246,6 +246,36 @@ export function subscribeToSessionEvents(
       sessionEndHandler.onTurnEnd(event);
     } else if (event.type === "agent_end") {
       sessionEndHandler.onAgentEnd();
+    } else if (event.type === "auto_retry_start") {
+      const ev = event as any;
+      const delaySec = Math.ceil(ev.delayMs / 1000);
+      ws.send(JSON.stringify({
+        type: "rate_limited",
+        attempt: ev.attempt,
+        maxAttempts: ev.maxAttempts,
+        retryAfter: delaySec,
+        message: `API 限流，${delaySec}s 后自动重试 (${ev.attempt}/${ev.maxAttempts})`,
+      }));
+    } else if (event.type === "auto_retry_end") {
+      const ev = event as any;
+      if (ev.success) {
+        ws.send(JSON.stringify({ type: "retry_success", attempt: ev.attempt }));
+      } else {
+        // 重试彻底失败，session 已终止，通知前端关闭
+        ws.send(JSON.stringify({
+          type: "retry_failed",
+          attempt: ev.attempt,
+          finalError: ev.finalError,
+        }));
+        // 补发 response_end，否则前端 UI 卡在等待状态
+        if (!state.hasSentResponseEnd) {
+          state.hasSentResponseEnd = true;
+          ws.send(JSON.stringify({
+            type: "response_end",
+            generatedContent: undefined,
+          }));
+        }
+      }
     }
   });
 

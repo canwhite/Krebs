@@ -3,7 +3,7 @@
  */
 
 /** 消息类型枚举 */
-type MessageType = "auth" | "stop" | "switch_session" | "prompt";
+type MessageType = "auth" | "stop" | "switch_session" | "prompt" | "abort_retry";
 
 /** 基础消息接口 */
 interface BaseMessage {
@@ -32,18 +32,24 @@ interface PromptMessage extends BaseMessage {
   message: string;
 }
 
+/** 中止重试消息 */
+interface AbortRetryMessage extends BaseMessage {
+  type: "abort_retry";
+}
+
 /** 联合类型 */
 type WebSocketIncomingMessage =
   | AuthMessage
   | StopMessage
   | SwitchSessionMessage
-  | PromptMessage;
+  | PromptMessage
+  | AbortRetryMessage;
 
 /** 解析消息 */
 function parseMessage(raw: string | Buffer): WebSocketIncomingMessage | null {
   try {
     const data = JSON.parse(raw.toString());
-    if (data.type && ["auth", "stop", "switch_session", "prompt"].includes(data.type)) {
+    if (data.type && ["auth", "stop", "switch_session", "prompt", "abort_retry"].includes(data.type)) {
       return data as WebSocketIncomingMessage;
     }
     return null;

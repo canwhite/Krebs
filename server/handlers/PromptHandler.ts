@@ -27,6 +27,16 @@ export function createPromptHandler(): PromptHandler {
         }
       }
 
+      if (session.isRetrying) {
+        ws.send(
+          JSON.stringify({
+            type: "rate_limited",
+            message: "正在等待 API 重试，请稍后",
+          }),
+        );
+        return;
+      }
+
       if (session.isStreaming) {
         console.log(`[WebSocket] 会话正在响应中，将新消息加入队列`);
 

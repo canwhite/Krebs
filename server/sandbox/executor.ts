@@ -65,7 +65,7 @@ function runWriteCommand(
   opts: { cwd: string; env?: Record<string, string> }
 ): Promise<ExecResult> {
   return new Promise((resolve, reject) => {
-    const proc = spawn(wasmtimePath, ["--dir", opts.cwd, wasmFile, command, ...args], {
+    const proc = spawn(wasmtimePath, ["--dir", `${opts.cwd}::/`, wasmFile, command, ...args], {
       env: { ...process.env, ...opts.env },
       stdio: ["ignore", "pipe", "pipe"],
     });

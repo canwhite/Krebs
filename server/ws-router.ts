@@ -71,6 +71,12 @@ export function createWsRouter(deps: WsRouterDeps): WsRouter {
         case "prompt":
           promptHandler.handle(ws, message);
           break;
+        case "abort_retry": {
+          const session = (ws as any).data?.session;
+          session?.abortRetry(); // 幂等，非重试状态无操作
+          ws.send(JSON.stringify({ type: "retry_aborted" }));
+          break;
+        }
       }
     },
   };
