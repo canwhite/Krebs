@@ -644,13 +644,26 @@ function App() {
       const data = await res.json();
 
       if (data.messages) {
-        const loadedMessages: Message[] = data.messages.map(
+        let loadedMessages: Message[] = data.messages.map(
           (msg: any, idx: number) => ({
             id: `${idx}_${Date.now()}`,
             role: msg.role,
             content: msg.content,
           }),
         );
+
+        // If only 1-2 messages, show notice that intermediate messages were cleaned up
+        if (loadedMessages.length <= 2) {
+          loadedMessages = [
+            {
+              id: `notice_${Date.now()}`,
+              role: "assistant" as const,
+              content: "⚠️ 此 Session 的中间消息已被清理，仅保留最终结果。完整的对话历史可能已被优化以节省空间。",
+            },
+            ...loadedMessages,
+          ];
+        }
+
         setMessages(loadedMessages);
 
         // Send switch session message to backend

@@ -5,7 +5,7 @@
 
 import type { WebSocket } from "bun";
 import { getSessionById } from "../../db/index.js";
-import { getSession, sessions } from "../session-service.js";
+import { lruSessionManager } from "../session-service.js";
 import { subscribeToSessionEvents } from "../event-subscription.js";
 
 export interface SwitchSessionHandler {
@@ -71,7 +71,7 @@ export function createSwitchSessionHandler(): SwitchSessionHandler {
           (ws as any).data.unsubscribe = unsubscribe;
 
           // P1-1 修复: 检查目标 sessionId 是否已存在，清理旧 runtime
-          const existingRuntime = sessions.get(message.sessionId);
+          const existingRuntime = lruSessionManager.getSession(message.sessionId);
           if (existingRuntime && existingRuntime !== runtime) {
             try {
               existingRuntime.dispose();
@@ -83,13 +83,13 @@ export function createSwitchSessionHandler(): SwitchSessionHandler {
             }
           }
 
-          // Update sessions Map mapping
-          sessions.set(message.sessionId, runtime);
+          // Update sessions via LRU manager
+          lruSessionManager.addSession(message.sessionId, runtime, sessionMeta.file_path);
 
           // Remove old sessionId mapping if different
           const oldSessionId = (ws as any).data.sessionId;
           if (oldSessionId && oldSessionId !== message.sessionId) {
-            sessions.delete(oldSessionId);
+            lruSessionManager.removeSession(oldSessionId);
           }
 
           // Update the sessionId in ws.data

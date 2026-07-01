@@ -35,6 +35,8 @@ import {
   extractFromSessionFile,
   extractFromTurnEvent,
 } from "../lib/session-transcript.js";
+import { lruSessionManager, LRUSessionManager } from "./services/session-manager/lru-session-manager.js";
+import { cleanupSession, cleanupExcessSessions } from "./services/session-manager/session-cleaner.js";
 
 // ==================== 模型配置 ====================
 export const MODEL_CONFIG = {
@@ -66,7 +68,8 @@ function createModel(): Model<"openai-completions"> {
   };
 }
 
-const sessions = new Map<string, AgentSessionRuntime>();
+// Sessions are now managed by LRUSessionManager
+// Use addSession/getSession/removeSession instead of direct Map access
 
 // 创建 runtime factory
 const createRuntimeFactory: CreateAgentSessionRuntimeFactory = async (
@@ -179,16 +182,24 @@ async function createRuntime(sessionId: string, sessionPath?: string, sandbox?: 
     }
   }
 
-  sessions.set(sessionId, runtime);
+  // Get the session file path from the runtime
+  const sessionFile = (runtime.session as any).sessionFile;
+  lruSessionManager.addSession(sessionId, runtime, sessionFile);
+
+  // Enforce LRU limit and cleanup excess sessions
+  cleanupExcessSessions().catch((e) => {
+    console.error("[CLEANUP] Error during excess session cleanup:", e);
+  });
+
   return { runtime };
 }
 
 function getSession(sessionId: string) {
-  return sessions.get(sessionId);
+  return lruSessionManager.getSession(sessionId);
 }
 
 async function deleteSession(sessionId: string) {
-  const runtime = sessions.get(sessionId);
+  const runtime = lruSessionManager.getSession(sessionId);
   if (runtime) {
     try {
       const session = runtime.session;
@@ -201,7 +212,7 @@ async function deleteSession(sessionId: string) {
       }
 
       await runtime.dispose();
-      sessions.delete(sessionId);
+      lruSessionManager.removeSession(sessionId);
       console.log(`[DELETE] Session ${sessionId} 已清理`);
     } catch (error) {
       console.error(`[DELETE] Session ${sessionId} 清理失败:`, error);
@@ -295,8 +306,10 @@ export {
   deleteSession,
   generateSessionId,
   waitForSessionComplete,
-  sessions,
 };
+
+// Re-export LRU manager for backward compatibility
+export { lruSessionManager };
 
 // Re-export from unified transcript module for backward compatibility
 export {

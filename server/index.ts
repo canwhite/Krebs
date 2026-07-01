@@ -9,7 +9,7 @@ import {
   getSession,
   deleteSession,
   generateSessionId,
-  sessions,
+  lruSessionManager,
   MODEL_CONFIG,
 } from "./session-service.js";
 import { subscribeToSessionEvents } from "./event-subscription.js";
@@ -170,7 +170,7 @@ function getContentType(filePath: string): string {
 
     if (url.pathname === "/health" && req.method === "GET") {
       return Response.json(
-        { status: "ok", sessions: sessions.size },
+        { status: "ok", sessions: lruSessionManager.size },
         { headers: corsHeaders },
       );
     }
@@ -276,11 +276,11 @@ function getContentType(filePath: string): string {
 
           const tempSessionId = (ws as any).data?.sessionId;
           if (tempSessionId) {
-            const tempRuntime = sessions.get(tempSessionId);
+            const tempRuntime = lruSessionManager.getSession(tempSessionId);
             if (tempRuntime) {
               try {
                 tempRuntime.dispose();
-                sessions.delete(tempSessionId);
+                lruSessionManager.removeSession(tempSessionId);
                 console.log(
                   `[WebSocket] 已清理失败的 runtime: ${tempSessionId}`,
                 );
