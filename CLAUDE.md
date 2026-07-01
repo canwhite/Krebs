@@ -52,6 +52,12 @@ After any change (no matter how small):
 - [ ] Are edge cases (empty data, unauthenticated, unauthorized) handled correctly?
 - [ ] Does anything else depend on this logic that needs updating?
 
+## File Organization
+- **Plans**: All implementation plans MUST be written to `docs/` directory，if plan write down， start to pre-mortem and update solutions on plan markdown until there are no high risk
+- **Test Notes**: All test-related text, test cases, and test data MUST be written to `test/` directory
+- **CLAUDE.md**: Contains general principles and constraints only, no plan content
+
+
 ## Frontend Change Verification
 
 **Must use browser verification, not just curl.** curl doesn't trigger CORS and may miss cross-origin issues.
