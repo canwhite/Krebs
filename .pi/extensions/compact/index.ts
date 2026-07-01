@@ -26,11 +26,12 @@ export default function (api: ExtensionAPI) {
             .map(part => part.text)
             .join("");
 
-          api.appendEntry("micro_compact", {
+          // Use appendCustomEntry to get entry ID back (api.appendEntry returns void)
+          (ctx.sessionManager as any).appendCustomEntry("micro_compact", {
             originalContent: content,
             toolName: target.toolMessage.toolName,
             truncatedAt: Date.now(),
-            messageIndex: target.messageIndex,
+            originalMessageIndex: target.messageIndex,  // Fixed: was messageIndex
           });
         }
 
@@ -49,18 +50,28 @@ export default function (api: ExtensionAPI) {
       // 计算边界
       const boundary = contextCollapser.calculateBoundary(messages, latestAnchor);
       if (boundary) {
+        // 获取 model 和 API key 用于生成摘要
+        const model = ctx.model;
+        let apiKey: string | undefined;
+        if (model) {
+          apiKey = await ctx.modelRegistry.getApiKeyForProvider(model.provider);
+        }
+
         // 生成摘要
         const summary = await contextCollapser.generateSummary(
           messages,
           boundary.headIndex,
-          boundary.tailIndex
+          boundary.tailIndex,
+          model,
+          apiKey,
+          ctx.signal
         );
 
         // 创建投影
         const projected = contextCollapser.createProjection(messages, boundary, summary);
 
-        // 持久化 Summary Anchor
-        api.appendEntry("summary_anchor", {
+        // 持久化 Summary Anchor（获取 entry ID）
+        (ctx.sessionManager as any).appendCustomEntry("summary_anchor", {
           headIndex: boundary.headIndex,
           tailIndex: boundary.tailIndex,
           summary,

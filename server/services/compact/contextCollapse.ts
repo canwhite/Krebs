@@ -11,6 +11,8 @@
  */
 
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { Model, UserMessage, TextContent } from "@earendil-works/pi-ai";
+import { completeSimple } from "@earendil-works/pi-ai/compat";
 import { DEFAULT_CONTEXT_COLLAPSE_CONFIG, type ContextCollapseConfig } from "./types.js";
 
 export interface CompactBoundary {
@@ -41,6 +43,7 @@ export function createContextCollapser(config: Partial<ContextCollapseConfig> = 
      * 判断是否应该触发 Context Collapse
      */
     shouldCollapse(tokens: number, contextWindow: number): boolean {
+      if (!contextWindow || contextWindow === 0) return false;
       const percent = tokens / contextWindow;
       return percent >= cfg.triggerThreshold && cfg.enabled;
     },
@@ -109,17 +112,27 @@ export function createContextCollapser(config: Partial<ContextCollapseConfig> = 
 
     /**
      * 生成摘要（调 LLM）
-     * 注意：这是一个 stub，实际需要通过 API 调用 LLM
      */
     async generateSummary(
       messages: AgentMessage[],
       headIndex: number,
-      tailIndex: number
+      tailIndex: number,
+      model?: Model<any>,
+      apiKey?: string,
+      signal?: AbortSignal
     ): Promise<string> {
       // 1. 提取 [headIndex, tailIndex) 的消息内容
       const rangeMessages = messages.slice(headIndex, tailIndex);
+      if (rangeMessages.length === 0) {
+        return "[empty range]";
+      }
 
-      // 2. 构造 prompt
+      // 2. 如果没有 model 或 apiKey，返回占位符
+      if (!model || !apiKey) {
+        return `[摘要 - ${rangeMessages.length} 条消息被压缩]`;
+      }
+
+      // 3. 构造 prompt
       const formatMessage = (m: AgentMessage, i: number): string => {
         const role = "role" in m ? m.role : "unknown";
         let content: string;
@@ -140,10 +153,29 @@ ${rangeMessages.map((m, i) => formatMessage(m, i)).join('\n')}
 - 简洁明了，便于后续上下文理解
 - 100-200 字以内`;
 
-      // 3. 调用 LLM 生成摘要
-      // TODO: 实现实际的 LLM 调用
-      // 目前返回占位符
-      return `[摘要 - ${rangeMessages.length} 条消息被压缩]`;
+      try {
+        const userMessage: UserMessage = {
+          role: "user",
+          content: [{ type: "text", text: prompt }],
+          timestamp: Date.now(),
+        };
+
+        const response = await completeSimple(
+          model,
+          {
+            systemPrompt: "你是一个简洁的摘要生成器。请根据提供的对话历史生成简短摘要。",
+            messages: [userMessage],
+          },
+          { maxTokens: 1024, signal, apiKey }
+        );
+
+        const textContent = response.content.find((c): c is TextContent => c.type === "text");
+        const result = textContent?.text?.trim() ?? "";
+        return result || `[摘要 - ${rangeMessages.length} 条消息被压缩]`;
+      } catch (err: any) {
+        console.error("[ContextCollapse] LLM call failed:", err.message);
+        return `[摘要 - ${rangeMessages.length} 条消息被压缩]`;
+      }
     },
 
     getConfig(): ContextCollapseConfig {
