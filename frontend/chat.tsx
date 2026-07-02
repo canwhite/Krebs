@@ -644,7 +644,11 @@ function App() {
   };
 
   const handleKeyDown = (e: any) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey) {
+      if (!input.trim() || !isConnected || isResponding) {
+        e.preventDefault();
+        return;
+      }
       e.preventDefault();
       sendMessage();
     }
